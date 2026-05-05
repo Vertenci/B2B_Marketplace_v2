@@ -75,16 +75,16 @@ class UserModel(Base, IdMixin, CreatedAtMixin):
     def __str__(self):
         return self.email
 
-    company_users: Mapped[list["CompanyUserModel"] | None] = relationship("CompanyUserModel", back_populates="user", lazy="selectin", uselist=True)
+    company_users: Mapped[list["CompanyUserModel"] | None] = relationship("CompanyUserModel", back_populates="user", lazy="raise", uselist=True)
 
-    agreements: Mapped[list["AgreementModel"] | None] = relationship("AgreementModel", back_populates="user", lazy="selectin", uselist=True)
+    agreements: Mapped[list["AgreementModel"] | None] = relationship("AgreementModel", back_populates="user", lazy="raise", uselist=True)
 
-    rental_requests: Mapped[list["RentalRequestModel"] | None] = relationship("RentalRequestModel", back_populates="user", lazy="selectin", uselist=True)
+    rental_requests: Mapped[list["RentalRequestModel"] | None] = relationship("RentalRequestModel", back_populates="user", lazy="raise", uselist=True)
 
-    rentals: Mapped[list["RentalModel"] | None] = relationship("RentalModel", back_populates="user", lazy="selectin", uselist=True)
+    rentals: Mapped[list["RentalModel"] | None] = relationship("RentalModel", back_populates="user", lazy="raise", uselist=True)
 
-    telemetries: Mapped[list["TelemetryModel"] | None] = relationship("TelemetryModel", back_populates="user", lazy="selectin",  uselist=True)
+    telemetries: Mapped[list["TelemetryModel"] | None] = relationship("TelemetryModel", back_populates="user", lazy="raise",  uselist=True)
 
-    driver_license: Mapped["DriverLicenseModel | None"] = relationship("DriverLicenseModel", back_populates="user", lazy="joined", uselist=False)
+    driver_license: Mapped["DriverLicenseModel | None"] = relationship("DriverLicenseModel", back_populates="user", lazy="raise", uselist=False)
 
-    refresh_tokens: Mapped[list["RefreshTokenModel"]] = relationship("RefreshTokenModel", back_populates="user", lazy="selectin", uselist=True)
+    refresh_tokens: Mapped[list["RefreshTokenModel"]] = relationship("RefreshTokenModel", back_populates="user", lazy="raise", uselist=True)

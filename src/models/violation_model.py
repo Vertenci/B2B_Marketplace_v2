@@ -47,6 +47,6 @@ class ViolationModel(Base, IdMixin, CreatedAtMixin):
         nullable=True,
     )
 
-    rental: Mapped["RentalModel"] = relationship("RentalModel", back_populates="violations", lazy="joined", uselist=False)
+    rental: Mapped["RentalModel"] = relationship("RentalModel", back_populates="violations", lazy="raise", uselist=False)
 
-    geofence_event: Mapped["GeofenceEventModel"] = relationship("GeofenceEventModel", back_populates="violations", lazy="joined", uselist=False)
+    geofence_event: Mapped["GeofenceEventModel"] = relationship("GeofenceEventModel", back_populates="violations", lazy="raise", uselist=False)

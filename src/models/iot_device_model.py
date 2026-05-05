@@ -17,7 +17,7 @@ class IotDeviceModel(Base, IdMixin):
     car_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("cars.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
     )
 
     device_identifier: Mapped[str | None] = mapped_column(

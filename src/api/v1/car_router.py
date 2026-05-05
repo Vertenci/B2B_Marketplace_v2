@@ -16,12 +16,25 @@ router = APIRouter(prefix="/lessor/cars", tags=["Lessor Cars"])
 async def get_cars(
         skip: int = Query(0, ge=0),
         limit: int = Query(10, ge=1, le=100),
+        user: UserModel = Depends(get_current_user),
         session: AsyncSession = Depends(db.get_session)
 ) -> list[CarResponse]:
-    cars = await CarService.get_cars(session, skip, limit)
+    cars = await CarService.get_cars(session, user, skip, limit)
     if not cars:
         raise HTTPException(status_code=404, detail="Cars not found")
     return [CarResponse.model_validate(car) for car in cars]
+
+
+@router.get("{car_id}", response_model=CarResponse)
+async def get_car(
+        car_id: uuid.UUID,
+        session: AsyncSession = Depends(db.get_session),
+        user: UserModel = Depends(get_current_user),
+) -> CarResponse:
+    car = await CarService.get_car(car_id, user, session)
+    if not car:
+        raise HTTPException(status_code=404, detail="Cars not found")
+    return CarResponse.model_validate(car)
 
 
 @router.post("", response_model=CarResponse)

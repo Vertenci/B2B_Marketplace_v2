@@ -54,4 +54,4 @@ class DriverLicenseModel(Base, IdMixin):
         nullable=False,
     )
 
-    user: Mapped["UserModel"] = relationship("UserModel", back_populates="driver_license", uselist=False, lazy="joined")
+    user: Mapped["UserModel"] = relationship("UserModel", back_populates="driver_license", uselist=False, lazy="raise")

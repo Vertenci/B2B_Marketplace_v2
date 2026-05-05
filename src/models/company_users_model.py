@@ -45,6 +45,6 @@ class CompanyUserModel(Base, IdMixin, CreatedAtMixin):
         nullable=False,
     )
 
-    user: Mapped["UserModel"] = relationship("UserModel", back_populates="company_users", lazy="joined", uselist=False)
+    user: Mapped["UserModel"] = relationship("UserModel", back_populates="company_users", lazy="raise", uselist=False)
 
-    company: Mapped["CompanyModel"] = relationship("CompanyModel", back_populates="company_users", lazy="joined", uselist=False)
+    company: Mapped["CompanyModel"] = relationship("CompanyModel", back_populates="company_users", lazy="raise", uselist=False)

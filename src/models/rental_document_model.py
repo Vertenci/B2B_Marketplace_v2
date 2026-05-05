@@ -44,4 +44,4 @@ class RentalDocumentsModel(Base, IdMixin):
         server_default=func.now()
     )
 
-    rental: Mapped["RentalModel"] = relationship("RentalModel", back_populates="rental_documents", uselist=False, lazy="joined")
+    rental: Mapped["RentalModel"] = relationship("RentalModel", back_populates="rental_documents", uselist=False, lazy="raise")

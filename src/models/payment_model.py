@@ -75,8 +75,8 @@ class PaymentModel(Base, IdMixin):
         nullable=False,
     )
 
-    rental: Mapped["RentalModel"] = relationship("RentalModel", back_populates="payment", lazy="joined", uselist=False)
+    rental: Mapped["RentalModel"] = relationship("RentalModel", back_populates="payment", lazy="raise", uselist=False)
 
-    payer_company: Mapped["CompanyModel"] = relationship("CompanyModel", foreign_keys=[payer_company_id], back_populates="payer_companies", lazy="joined", uselist=False)
+    payer_company: Mapped["CompanyModel"] = relationship("CompanyModel", foreign_keys=[payer_company_id], back_populates="payer_companies", lazy="raise", uselist=False)
 
-    receiver_company: Mapped["CompanyModel"] = relationship("CompanyModel", foreign_keys=[receiver_company_id], back_populates="receiver_companies", lazy="joined", uselist=False)
+    receiver_company: Mapped["CompanyModel"] = relationship("CompanyModel", foreign_keys=[receiver_company_id], back_populates="receiver_companies", lazy="raise", uselist=False)

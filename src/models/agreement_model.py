@@ -49,4 +49,4 @@ class AgreementModel(Base, IdMixin):
         nullable=True,
     )
 
-    user: Mapped["UserModel"] = relationship("UserModel", back_populates="agreements", lazy="joined", uselist=False)
+    user: Mapped["UserModel"] = relationship("UserModel", back_populates="agreements", lazy="raise", uselist=False)

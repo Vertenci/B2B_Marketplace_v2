@@ -37,4 +37,4 @@ class RefreshTokenModel(Base, IdMixin):
         nullable=False,
     )
 
-    user: Mapped["UserModel"] = relationship("UserModel", back_populates="refresh_tokens", lazy="joined", uselist=False)
+    user: Mapped["UserModel"] = relationship("UserModel", back_populates="refresh_tokens", lazy="raise", uselist=False)

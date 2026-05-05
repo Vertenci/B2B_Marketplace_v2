@@ -57,8 +57,8 @@ class GeofenceEventModel(Base, IdMixin):
         server_default=func.now()
     )
 
-    rental: Mapped["RentalModel"] = relationship("RentalModel", back_populates="geofence_events", lazy="joined", uselist=False)
+    rental: Mapped["RentalModel"] = relationship("RentalModel", back_populates="geofence_events", lazy="raise", uselist=False)
 
-    geofence: Mapped["GeofenceModel"] = relationship("GeofenceModel", back_populates="geofence_events", lazy="joined", uselist=False)
+    geofence: Mapped["GeofenceModel"] = relationship("GeofenceModel", back_populates="geofence_events", lazy="raise", uselist=False)
 
-    violations: Mapped[list["ViolationModel"] | None] = relationship("ViolationModel", back_populates="geofence_event", lazy="selectin", uselist=True)
+    violations: Mapped[list["ViolationModel"] | None] = relationship("ViolationModel", back_populates="geofence_event", lazy="raise", uselist=True)
