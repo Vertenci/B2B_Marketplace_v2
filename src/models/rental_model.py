@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import UUID, ForeignKey, DateTime, func, Numeric, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -115,7 +115,7 @@ class RentalModel(Base, IdMixin, CreatedAtMixin):
 
     user: Mapped["UserModel"] = relationship("UserModel", back_populates="rentals", lazy="raise", foreign_keys=[driver_id], uselist=False)
 
-    payment: Mapped["PaymentModel"] = relationship("PaymentModel", back_populates="rental", lazy="raise", uselist=False)
+    payment: Mapped[Optional["PaymentModel", None]] = relationship("PaymentModel", back_populates="rental", lazy="raise", uselist=False)
 
     rental_documents: Mapped[list["RentalDocumentsModel"]] = relationship("RentalDocumentsModel", back_populates="rental", lazy="raise", uselist=True)
 

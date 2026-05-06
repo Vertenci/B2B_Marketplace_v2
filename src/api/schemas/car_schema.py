@@ -59,6 +59,7 @@ class GeofenceShort(BaseModel):
 class RentalRequestShort(BaseModel):
     model_config = {"from_attributes": True}
 
+    id: uuid.UUID
     user: UserShort
     start_date: datetime
     end_date: datetime
@@ -133,3 +134,7 @@ class DeleteResponse(BaseModel):
     success: bool
     message: str
     car_id: uuid.UUID
+
+
+class AttachIotRequest(BaseModel):
+    iot_id: uuid.UUID

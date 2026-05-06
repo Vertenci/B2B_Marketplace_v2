@@ -14,6 +14,7 @@ from src.dependencies.auth import get_current_user
 from src.models import UserModel
 from src.services.iot_device_service import IotDeviceService
 
+
 router = APIRouter(prefix="/lessor/iots", tags=["Lessor IoT Devices"])
 
 

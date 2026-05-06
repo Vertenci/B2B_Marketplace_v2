@@ -6,6 +6,9 @@ from starlette.middleware.cors import CORSMiddleware
 
 from src.api.v1.auth_router import router as auth_router
 from src.api.v1.car_router import router as car_router
+from src.api.v1.iot_device_router import router as iot_device_router
+from src.api.v1.geofence_router import router as geofence_router
+from src.api.v1.rental_request_router import router as rental_requests_router
 from src.admin.setup import setup_admin
 from src.core.settings import settings
 from src.db.session import db
@@ -33,5 +36,8 @@ app.add_middleware(
 
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(car_router, prefix="/api/v1")
+app.include_router(iot_device_router, prefix="/api/v1")
+app.include_router(geofence_router, prefix="/api/v1")
+app.include_router(rental_requests_router, prefix="/api/v1")
 
 setup_admin(app, db)

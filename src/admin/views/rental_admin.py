@@ -18,10 +18,6 @@ class RentalAdmin(BaseAdmin, model=RentalModel):
 
     column_list = [
         RentalModel.id,
-        RentalModel.car_id,
-        RentalModel.driver_id,
-        RentalModel.lessor_company_id,
-        RentalModel.renter_company_id,
         RentalModel.start_date,
         RentalModel.end_date,
         RentalModel.base_price_total,

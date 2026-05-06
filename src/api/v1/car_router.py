@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.schemas.car_schema import CarResponse, CarRequest, CarUpdate, CarStatusRequest, CarStatusResponse, \
-    DeleteResponse
+    DeleteResponse, AttachIotRequest
+from src.api.schemas.iot_device_schema import IotDeviceResponse
 from src.db.session import db
 from src.dependencies.auth import get_current_user
 from src.models import UserModel
@@ -61,6 +62,7 @@ async def update_car(
             raise HTTPException(status_code=404, detail="Car not found")
         return CarResponse.model_validate(car)
 
+
 @router.patch("/{car_id}/status", response_model=CarStatusResponse)
 async def update_car_status(
         car_id: uuid.UUID,
@@ -72,6 +74,35 @@ async def update_car_status(
     if not car_status:
         raise HTTPException(status_code=404, detail="Car not found")
     return CarStatusResponse.model_validate(car_status)
+
+
+@router.post("/{car_id}/iot", response_model=CarResponse)
+async def attach_iot_to_car(
+    car_id: uuid.UUID,
+    data: AttachIotRequest,
+    user: UserModel = Depends(get_current_user),
+    session: AsyncSession = Depends(db.get_session)
+) -> CarResponse:
+    try:
+        car = await CarService.attach_iot_to_car(car_id, data.iot_id, user, session)
+        return CarResponse.model_validate(car)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{car_id}/iot", response_model=IotDeviceResponse)
+async def get_car_iot(
+    car_id: uuid.UUID,
+    user: UserModel = Depends(get_current_user),
+    session: AsyncSession = Depends(db.get_session)
+) -> IotDeviceResponse:
+    try:
+        iot = await CarService.get_car_iot(car_id, user, session)
+        if not iot:
+            raise HTTPException(status_code=404, detail="IoT device not found for this car")
+        return IotDeviceResponse.model_validate(iot)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.delete("/{car_id}")

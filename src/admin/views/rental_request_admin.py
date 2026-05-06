@@ -28,6 +28,8 @@ class RentalRequestAdmin(BaseAdmin, model=RentalRequestModel):
         RentalRequestModel.created_at,
     ]
 
+    form_excluded_columns = [RentalRequestModel.rental]
+
     column_searchable_list = [
         RentalRequestModel.message,
     ]

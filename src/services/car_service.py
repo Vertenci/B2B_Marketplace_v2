@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
 from src.api.schemas.car_schema import CarRequest, CarUpdate, CarStatusRequest
-from src.models import CarModel, UserModel, CompanyUserModel, RentalRequestModel, RentalModel
+from src.models import CarModel, UserModel, CompanyUserModel, RentalRequestModel, RentalModel, IotDeviceModel
 
 
 class CarService:
@@ -205,5 +205,69 @@ class CarService:
             )
         )
 
+        result = await session.execute(stmt)
+        return result.unique().scalar_one_or_none()
+
+    @staticmethod
+    async def attach_iot_to_car(
+            car_id: uuid.UUID,
+            iot_id: uuid.UUID,
+            user: UserModel,
+            session: AsyncSession
+    ) -> CarModel:
+        company_id = await CarService._get_company_id_for_user(user, session)
+
+        stmt = select(CarModel).where(
+            CarModel.id == car_id,
+            CarModel.owner_company_id == company_id
+        )
+        result = await session.execute(stmt)
+        car = result.scalars().first()
+
+        if not car:
+            raise ValueError("Car not found or access denied")
+
+        stmt = select(IotDeviceModel).where(
+            IotDeviceModel.id == iot_id,
+            IotDeviceModel.car_id.is_(None)
+        )
+        result = await session.execute(stmt)
+        iot = result.scalars().first()
+
+        if not iot:
+            raise ValueError("IoT device not found or already attached to another car")
+
+        iot.car_id = car_id
+
+        await session.commit()
+        await session.refresh(car)
+
+        return await CarService._get_car_by_id(car.id, session)
+
+    @staticmethod
+    async def get_car_iot(
+            car_id: uuid.UUID,
+            user: UserModel,
+            session: AsyncSession
+    ) -> IotDeviceModel | None:
+        company_id = await CarService._get_company_id_for_user(user, session)
+
+        stmt = select(CarModel).where(
+            CarModel.id == car_id,
+            CarModel.owner_company_id == company_id
+        )
+        result = await session.execute(stmt)
+        car = result.scalars().first()
+
+        if not car:
+            raise ValueError("Car not found or access denied")
+
+        stmt = (
+            select(IotDeviceModel)
+            .where(IotDeviceModel.car_id == car_id)
+            .options(
+                joinedload(IotDeviceModel.car)
+            )
+        )
         result = await session.execute(stmt)
         return result.unique().scalar_one_or_none()

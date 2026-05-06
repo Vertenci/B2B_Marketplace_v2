@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import UUID, ForeignKey, DateTime, func, Text
 from sqlalchemy import Enum as SqlEnum
@@ -30,6 +30,7 @@ class RentalRequestModel(Base, IdMixin, CreatedAtMixin):
         UUID(as_uuid=True),
         ForeignKey("cars.id", ondelete="CASCADE"),
         nullable=False,
+        unique=True,
     )
 
     driver_id: Mapped[uuid.UUID] = mapped_column(
@@ -74,4 +75,4 @@ class RentalRequestModel(Base, IdMixin, CreatedAtMixin):
 
     user: Mapped["UserModel"] = relationship("UserModel", back_populates="rental_requests", lazy="raise", uselist=False)
 
-    rental: Mapped["RentalModel"] = relationship("RentalModel", back_populates="rental_request", lazy="raise", uselist=False)
+    rental: Mapped[Optional["RentalModel"]] = relationship("RentalModel", back_populates="rental_request", lazy="raise", uselist=False)
