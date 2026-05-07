@@ -115,7 +115,7 @@ class RentalModel(Base, IdMixin, CreatedAtMixin):
 
     user: Mapped["UserModel"] = relationship("UserModel", back_populates="rentals", lazy="raise", foreign_keys=[driver_id], uselist=False)
 
-    payment: Mapped[Optional["PaymentModel", None]] = relationship("PaymentModel", back_populates="rental", lazy="raise", uselist=False)
+    payment: Mapped[Optional["PaymentModel"]] = relationship("PaymentModel", back_populates="rental", lazy="raise", uselist=False)
 
     rental_documents: Mapped[list["RentalDocumentsModel"]] = relationship("RentalDocumentsModel", back_populates="rental", lazy="raise", uselist=True)
 

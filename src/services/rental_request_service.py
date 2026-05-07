@@ -1,5 +1,6 @@
 import uuid
 from decimal import Decimal
+import asyncio
 from typing import Sequence, Any
 
 from sqlalchemy import select
@@ -14,7 +15,7 @@ from src.models import (
     CompanyModel, RentalModel,
 )
 from src.models.enums import RentalRequestStatus, CompanyType, CarStatus, RentalStatus
-from src.services.document_service import DocumentService
+from src.services.contract_service import ContractService
 
 
 class RentalRequestService:
@@ -64,9 +65,6 @@ class RentalRequestService:
             user: UserModel,
             session: AsyncSession
     ) -> RentalModel:
-        """
-        Одобрить заявку на аренду и создать аренду (Rental).
-        """
         lessor_company_id = await RentalRequestService._get_company_id_for_user(user, session)
 
         company_stmt = select(CompanyModel).where(CompanyModel.id == lessor_company_id)
@@ -127,12 +125,57 @@ class RentalRequestService:
         await session.commit()
         await session.refresh(rental)
 
-        import asyncio
+        rental_with_relations = await RentalRequestService._get_rental_by_id(rental.id, session)
+
         asyncio.create_task(
-            DocumentService.generate_contract(rental.id, session)
+            ContractService.generate_and_upload_contract(rental_with_relations, session)
         )
 
         return await RentalRequestService._get_rental_by_id(rental.id, session)
+
+    @staticmethod
+    async def reject_request(
+            request_id: uuid.UUID,
+            user: UserModel,
+            session: AsyncSession
+    ) -> RentalRequestModel:
+        lessor_company_id = await RentalRequestService._get_company_id_for_user(user, session)
+
+        company_stmt = select(CompanyModel).where(CompanyModel.id == lessor_company_id)
+        result = await session.execute(company_stmt)
+        lessor_company = result.scalars().first()
+
+        if not lessor_company or lessor_company.type != CompanyType.LESSOR:
+            raise ValueError("Only lessor companies can reject requests")
+
+        stmt = (
+            select(RentalRequestModel)
+            .join(CarModel, RentalRequestModel.car_id == CarModel.id)
+            .join(CompanyModel, RentalRequestModel.renter_company_id == CompanyModel.id)
+            .where(
+                RentalRequestModel.id == request_id,
+                CarModel.owner_company_id == lessor_company_id,
+                RentalRequestModel.status == RentalRequestStatus.PENDING,
+                CompanyModel.type == CompanyType.RENTER
+            )
+            .options(
+                joinedload(RentalRequestModel.car),
+                joinedload(RentalRequestModel.company),
+                joinedload(RentalRequestModel.user),
+            )
+        )
+        result = await session.execute(stmt)
+        request = result.unique().scalar_one_or_none()
+
+        if not request:
+            raise ValueError("Request not found, already processed, or access denied")
+
+        request.status = RentalRequestStatus.REJECTED
+
+        await session.commit()
+        await session.refresh(request)
+
+        return request
 
     @staticmethod
     async def _get_rental_by_id(
