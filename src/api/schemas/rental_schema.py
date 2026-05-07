@@ -4,7 +4,18 @@ from decimal import Decimal
 
 from pydantic import BaseModel
 
-from src.models.enums import RentalStatus, CompanyType, CarStatus, RentalRequestStatus
+from src.models.enums import (
+    RentalStatus,
+    CompanyType,
+    CarStatus,
+    RentalRequestStatus,
+    GeofenceType,
+    ViolationType,
+    SeverityType,
+    PaymentStatus,
+    PaymentType,
+    RentalDocumentType,
+)
 
 
 class CompanyShort(BaseModel):
@@ -49,6 +60,115 @@ class RentalRequestShort(BaseModel):
     status: RentalRequestStatus
 
 
+class PaymentShort(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    amount: Decimal
+    commission_amount: Decimal
+    status: PaymentStatus
+    payment_method: PaymentType
+    paid_at: datetime | None
+    payer_company: CompanyShort | None = None
+    receiver_company: CompanyShort | None = None
+
+
+class RentalDocumentShort(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    type: RentalDocumentType
+    file_path: str
+    generated_at: datetime
+
+
+class TelemetryShort(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    lat: Decimal
+    lng: Decimal
+    speed: int
+    recorded_at: datetime
+
+
+class GeofenceShort(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    name: str
+    center_lat: Decimal
+    center_lng: Decimal
+    radius_meters: int
+
+
+class GeofenceEventShort(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    type: GeofenceType
+    lat: Decimal
+    lng: Decimal
+    triggered_at: datetime
+    geofence: GeofenceShort | None = None
+
+
+class ViolationShort(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    type: ViolationType | None
+    severity: SeverityType | None
+    created_at: datetime
+
+
+class TelemetryDetailResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    lat: Decimal
+    lng: Decimal
+    speed: int
+    recorded_at: datetime
+
+    rental: RentalShort | None = None
+    car: CarShort | None = None
+    user: UserShort | None = None
+
+
+class RentalShort(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    start_date: datetime
+    end_date: datetime
+    status: RentalStatus
+
+
+class GeofenceEventDetailShort(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    type: GeofenceType
+    lat: Decimal
+    lng: Decimal
+    triggered_at: datetime
+    geofence: GeofenceShort | None = None
+
+
+class ViolationDetailResponse(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    type: ViolationType | None
+    severity: SeverityType | None
+    created_at: datetime
+
+    geofence_event: GeofenceEventDetailShort | None = None
+
+
+
+
 class RentalResponse(BaseModel):
     model_config = {"from_attributes": True}
 
@@ -68,3 +188,11 @@ class RentalResponse(BaseModel):
     renter_company: CompanyShort | None = None
     car: CarShort | None = None
     user: UserShort | None = None
+
+    payment: PaymentShort | None = None
+
+    rental_documents: list[RentalDocumentShort] = []
+
+    telemetries: list[TelemetryShort] = []
+    geofence_events: list[GeofenceEventShort] = []
+    violations: list[ViolationShort] = []
