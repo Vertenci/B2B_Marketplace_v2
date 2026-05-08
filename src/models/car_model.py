@@ -75,10 +75,10 @@ class CarModel(Base, IdMixin, CreatedAtMixin):
 
     iot_device: Mapped["IotDeviceModel | None"] = relationship("IotDeviceModel", back_populates="car", lazy="raise", uselist=False)
 
-    geofences: Mapped[list["GeofenceModel"] | None] = relationship("GeofenceModel", back_populates="car", lazy="raise", uselist=True)
+    geofences: Mapped[list["GeofenceModel"]] = relationship("GeofenceModel", back_populates="car", lazy="raise", uselist=True)
 
-    rental_requests: Mapped[list["RentalRequestModel"] | None] = relationship("RentalRequestModel", back_populates="car", lazy="raise", uselist=True)
+    rental_requests: Mapped[list["RentalRequestModel"]] = relationship("RentalRequestModel", back_populates="car", lazy="raise", uselist=True)
 
-    rentals: Mapped[list["RentalModel"] | None] = relationship("RentalModel", back_populates="car", lazy="raise", uselist=True)
+    rentals: Mapped[list["RentalModel"]] = relationship("RentalModel", back_populates="car", lazy="raise", uselist=True)
 
-    telemetries: Mapped[list["TelemetryModel"] | None] = relationship("TelemetryModel", back_populates="car", lazy="raise", uselist=True)
+    telemetries: Mapped[list["TelemetryModel"]] = relationship("TelemetryModel", back_populates="car", lazy="raise", uselist=True)
