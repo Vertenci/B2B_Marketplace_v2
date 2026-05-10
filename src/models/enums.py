@@ -18,7 +18,7 @@ class CompanyType(str, enum.Enum):
 
 class AgreementType(str, enum.Enum):
     PUBLIC_OFFER = "public_offer"
-    DRIVER_OFFER = "driver_offer"
+    DRIVER_OFFER = "driver_offer"  # Оставлено для совместимости с БД
 
 
 class CarStatus(str, enum.Enum):

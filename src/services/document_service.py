@@ -1,6 +1,8 @@
 import logging
+from datetime import datetime, timezone
 
-from sqlalchemy import select, desc, func
+from fastapi import Request
+from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models import UserModel
@@ -26,35 +28,39 @@ class DocumentService:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def accept_agreement(
+    async def accept_public_offer(
             session: AsyncSession,
             user: UserModel,
-            agreement_type: AgreementType,
             ip_address: str | None = None,
             user_agent: str | None = None
     ) -> AgreementModel:
+        """Принять публичную оферту и обновить флаг в профиле пользователя."""
         stmt = select(AgreementModel).where(
             AgreementModel.user_id == user.id,
-            AgreementModel.type == agreement_type
+            AgreementModel.type == AgreementType.PUBLIC_OFFER
         )
         result = await session.execute(stmt)
         existing_agreement = result.scalar_one_or_none()
 
+        now = datetime.now(timezone.utc)
+
         if existing_agreement:
-            existing_agreement.accepted_at = func.now()
+            existing_agreement.accepted_at = now
             existing_agreement.ip_address = ip_address
             existing_agreement.user_agent = user_agent
             agreement = existing_agreement
-            logger.info(f"Updated {agreement_type.value} agreement for user {user.id}")
         else:
             agreement = AgreementModel(
                 user_id=user.id,
-                type=agreement_type,
+                type=AgreementType.PUBLIC_OFFER,
+                accepted_at=now,
                 ip_address=ip_address,
                 user_agent=user_agent
             )
             session.add(agreement)
-            logger.info(f"Created {agreement_type.value} agreement for user {user.id}")
+
+        # Обновляем флаг в модели пользователя
+        user.public_offer_accepted = True
 
         await session.commit()
         await session.refresh(agreement)
@@ -72,18 +78,12 @@ class DocumentService:
         agreements = result.scalars().all()
 
         status = {
-            "public_offer_accepted": False,
-            "driver_offer_accepted": False,
+            "public_offer_accepted": user.public_offer_accepted,
             "public_offer_agreement": None,
-            "driver_offer_agreement": None
         }
 
         for agreement in agreements:
             if agreement.type == AgreementType.PUBLIC_OFFER:
-                status["public_offer_accepted"] = True
                 status["public_offer_agreement"] = agreement
-            elif agreement.type == AgreementType.DRIVER_OFFER:
-                status["driver_offer_accepted"] = True
-                status["driver_offer_agreement"] = agreement
 
         return status

@@ -128,7 +128,7 @@ class RentalRequestService:
         rental_with_relations = await RentalRequestService._get_rental_by_id(rental.id, session)
 
         asyncio.create_task(
-            ContractService.generate_and_upload_contract(rental_with_relations, session)
+            ContractService.generate_and_upload_contract(str(rental.id))
         )
 
         return await RentalRequestService._get_rental_by_id(rental.id, session)

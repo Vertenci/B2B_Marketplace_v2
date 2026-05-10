@@ -185,6 +185,31 @@ class RentalService:
         return result.unique().scalar_one_or_none()
 
     @staticmethod
+    async def _get_rental_by_id(
+        rental_id: uuid.UUID,
+        session: AsyncSession
+    ) -> RentalModel | None:
+        stmt = (
+            select(RentalModel)
+            .where(RentalModel.id == rental_id)
+            .options(
+                joinedload(RentalModel.rental_request),
+                joinedload(RentalModel.lessor_company),
+                joinedload(RentalModel.renter_company),
+                joinedload(RentalModel.car),
+                joinedload(RentalModel.user),
+                joinedload(RentalModel.payment).joinedload(PaymentModel.payer_company),
+                joinedload(RentalModel.payment).joinedload(PaymentModel.receiver_company),
+                selectinload(RentalModel.rental_documents),
+                selectinload(RentalModel.telemetries),
+                selectinload(RentalModel.geofence_events).joinedload(GeofenceEventModel.geofence),
+                selectinload(RentalModel.violations),
+            )
+        )
+        result = await session.execute(stmt)
+        return result.unique().scalar_one_or_none()
+
+    @staticmethod
     async def _get_company_id_for_user(
         user: UserModel,
         session: AsyncSession
@@ -242,14 +267,22 @@ class RentalService:
         now = datetime.now(timezone.utc)
         rental.actual_return_date = now
 
-        # Пересчитываем стоимость если завершена раньше
+        price_per_day = rental.car.price_per_day
+
         if now < rental.end_date:
+            # Завершена раньше — пересчитываем базовую цену
             days = (now - rental.start_date).days
             if days <= 0:
                 days = 1
-            rental.base_price_total = rental.car.price_per_day * Decimal(str(days))
-        # Если завершена позже — extra_days_fee уже должно быть рассчитано отдельно,
-        # пока оставляем как есть
+            rental.base_price_total = price_per_day * Decimal(str(days))
+            rental.extra_days_fee = Decimal("0.00")
+        elif now > rental.end_date:
+            # Завершена позже — считаем доп. дни
+            extra_days = (now - rental.end_date).days
+            if extra_days > 0:
+                rental.extra_days_fee = price_per_day * Decimal(str(extra_days))
+        else:
+            rental.extra_days_fee = Decimal("0.00")
 
         # Меняем статусы
         rental.status = RentalStatus.COMPLETED
@@ -264,10 +297,10 @@ class RentalService:
         # Асинхронно генерируем акт и счёт-фактуру
         from src.services.contract_service import ContractService
         asyncio.create_task(
-            ContractService.generate_and_upload_act(rental_with_relations, "lessor", session)
+            ContractService.generate_and_upload_act(str(rental.id), "lessor")
         )
         asyncio.create_task(
-            ContractService.generate_and_upload_invoice(rental_with_relations, session)
+            ContractService.generate_and_upload_invoice(str(rental.id))
         )
 
         return rental_with_relations

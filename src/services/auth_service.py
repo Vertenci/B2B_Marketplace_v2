@@ -3,6 +3,8 @@ from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
+
 from src.core.security import verify_password, create_access_token, create_refresh_token, verify_token
 from src.core.settings import settings
 from src.models.refresh_token_model import RefreshTokenModel
@@ -14,16 +16,23 @@ class AuthService:
     async def register(
             email: str,
             password: str,
+            phone: str,
+            full_name: str,
             session: AsyncSession,
     ) -> UserModel:
         result = await session.execute(
             select(UserModel).where(UserModel.email == email)
         )
-
         if result.scalar_one_or_none():
             raise HTTPException(status_code=400, detail="Email already exists")
 
-        user = UserModel(email=email,)
+        result = await session.execute(
+            select(UserModel).where(UserModel.phone == phone)
+        )
+        if result.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Phone already exists")
+
+        user = UserModel(email=email, phone=phone, full_name=full_name)
         user.password = password
 
         session.add(user)
@@ -47,7 +56,7 @@ class AuthService:
         if not user.is_active:
             raise HTTPException(status_code=403, detail="User is not active")
 
-        access_token = create_access_token(str(user.id), user.system_role.value)
+        access_token = create_access_token(str(user.id), user.role.value)
         token_id, refresh_token, token_hash = create_refresh_token()
 
         expire = datetime.now(timezone.utc) + timedelta(
@@ -68,9 +77,13 @@ class AuthService:
         except ValueError:
             raise HTTPException(status_code=401, detail="Invalid refresh token")
 
-        result = await session.execute(select(RefreshTokenModel).where(RefreshTokenModel.id == uuid.UUID(token_id)))
+        result = await session.execute(
+            select(RefreshTokenModel)
+            .where(RefreshTokenModel.id == uuid.UUID(token_id))
+            .options(joinedload(RefreshTokenModel.user))
+        )
 
-        token = result.scalar_one_or_none()
+        token = result.unique().scalar_one_or_none()
 
         if not token:
             raise HTTPException(status_code=401, detail="Invalid refresh token")
@@ -86,7 +99,7 @@ class AuthService:
 
         user = token.user
 
-        access_token = create_access_token(str(user.id), user.system_role.value)
+        access_token = create_access_token(str(user.id), user.role.value)
 
         token.revoked = True
 

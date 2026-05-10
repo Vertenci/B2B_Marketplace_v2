@@ -137,7 +137,7 @@ class RentalAdmin(BaseAdmin, model=RentalModel):
             return "—"
 
         return Markup(
-            f'<span style="font-weight: 600; color: #2E7D32;">${price:,.2f}</span>'
+            f'<span style="font-weight: 600; color: #2E7D32;">P{price:,.2f}</span>'
         )
 
     @staticmethod
@@ -149,11 +149,11 @@ class RentalAdmin(BaseAdmin, model=RentalModel):
 
         if fee > 0:
             return Markup(
-                f'<span style="color: #F44336; font-weight: 500;">+${fee:,.2f}</span>'
+                f'<span style="color: #F44336; font-weight: 500;">+P{fee:,.2f}</span>'
             )
         else:
             return Markup(
-                f'<span style="color: #757575;">${fee:,.2f}</span>'
+                f'<span style="color: #757575;">P{fee:,.2f}</span>'
             )
 
     @staticmethod
@@ -163,7 +163,7 @@ class RentalAdmin(BaseAdmin, model=RentalModel):
         total = base + extra
 
         return Markup(
-            f'<span style="font-weight: 700; color: #1565C0;">${total:,.2f}</span>'
+            f'<span style="font-weight: 700; color: #1565C0;">P{total:,.2f}</span>'
         )
 
     @staticmethod

@@ -3,22 +3,15 @@ from pydantic import BaseModel, EmailStr, Field
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str = Field(
-        min_length=8,
-        max_length=128
-    )
+    password: str = Field(min_length=8, max_length=128)
 
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    password: str = Field(
-        min_length=8,
-        max_length=128
-    )
+    password: str = Field(min_length=8, max_length=128)
+    phone: str = Field(min_length=7, max_length=50)
+    full_name: str = Field(min_length=2, max_length=150)
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str = Field(
-        min_length=10,
-        max_length=512
-    )
+    refresh_token: str = Field(min_length=10, max_length=512)

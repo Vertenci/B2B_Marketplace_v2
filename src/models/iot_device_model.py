@@ -14,9 +14,9 @@ if TYPE_CHECKING:
 class IotDeviceModel(Base, IdMixin):
     __tablename__ = "iot_devices"
 
-    car_id: Mapped[uuid.UUID] = mapped_column(
+    car_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("cars.id", ondelete="CASCADE"),
+        ForeignKey("cars.id", ondelete="SET NULL"),
         nullable=True,
     )
 

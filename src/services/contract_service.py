@@ -1,437 +1,391 @@
+"""
+ContractService — генерирует PDF и сохраняет документы в MinIO.
+
+ВАЖНО: каждый async метод открывает СОБСТВЕННУЮ сессию через db.session_factory.
+Никакая внешняя сессия сюда НЕ передаётся — это предотвращает
+"cannot perform operation: another operation is in progress"
+при запуске через asyncio.create_task().
+"""
 import asyncio
 import io
 import logging
 from datetime import datetime
-from sqlalchemy.ext.asyncio import AsyncSession
+
 from weasyprint import HTML
 
 from src.clients.minio_client import minio_client
 from src.models import RentalModel, RentalDocumentsModel
 from src.models.enums import RentalDocumentType
 
-
-
 logger = logging.getLogger(__name__)
 
 
+# ─── HTML Generators ──────────────────────────────────────────────────────────
+
+def _generate_contract_html(rental: RentalModel) -> str:
+    start_date = rental.start_date.strftime('%d.%m.%Y %H:%M')
+    end_date = rental.end_date.strftime('%d.%m.%Y %H:%M')
+    now_date = datetime.now().strftime('%d.%m.%Y')
+
+    lessor_name = rental.lessor_company.name if rental.lessor_company else "—"
+    lessor_inn  = rental.lessor_company.inn  if rental.lessor_company else "—"
+    renter_name = rental.renter_company.name if rental.renter_company else "—"
+    renter_inn  = rental.renter_company.inn  if rental.renter_company else "—"
+    car_brand   = rental.car.brand           if rental.car else "—"
+    car_model   = rental.car.model           if rental.car else "—"
+    car_year    = rental.car.year            if rental.car else "—"
+    car_plate   = rental.car.plate_number    if rental.car else "—"
+    car_vin     = rental.car.vin             if rental.car else "—"
+    price_day   = rental.car.price_per_day   if rental.car else 0
+    total       = rental.base_price_total
+
+    return f"""<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Договор аренды</title>
+  <style>
+    @page {{ size: A4; margin: 2cm; }}
+    body {{ font-family: Arial, sans-serif; font-size: 12px; line-height: 1.5; color: #000; }}
+    h1 {{ text-align: center; font-size: 18px; margin-bottom: 20px; }}
+    h2 {{ font-size: 14px; margin-top: 25px; margin-bottom: 10px; }}
+    table {{ width: 100%; border-collapse: collapse; margin: 15px 0; }}
+    th, td {{ padding: 8px 10px; border: 1px solid #000; font-size: 12px; }}
+    th {{ background: #f0f0f0; font-weight: bold; text-align: left; }}
+    .sign-row td {{ border: none; padding: 30px 10px 0; vertical-align: top; width: 50%; }}
+  </style>
+</head>
+<body>
+  <h1>ДОГОВОР АРЕНДЫ ТРАНСПОРТНОГО СРЕДСТВА</h1>
+  <p style="text-align:right">г. Дата: {now_date}</p>
+
+  <h2>1. Стороны договора</h2>
+  <table>
+    <tr><th style="width:30%">Арендодатель</th><td><strong>{lessor_name}</strong> ИНН: {lessor_inn}</td></tr>
+    <tr><th>Арендатор</th><td><strong>{renter_name}</strong> ИНН: {renter_inn}</td></tr>
+  </table>
+
+  <h2>2. Предмет договора</h2>
+  <table>
+    <tr><th style="width:30%">Автомобиль</th><td>{car_brand} {car_model} {car_year}</td></tr>
+    <tr><th>Гос. номер</th><td>{car_plate}</td></tr>
+    <tr><th>VIN</th><td>{car_vin}</td></tr>
+    <tr><th>Начало аренды</th><td>{start_date}</td></tr>
+    <tr><th>Окончание аренды</th><td>{end_date}</td></tr>
+    <tr><th>Стоимость/день</th><td>{price_day} руб.</td></tr>
+    <tr><th>Итого</th><td><strong>{total} руб.</strong></td></tr>
+  </table>
+
+  <h2>3. Подписи сторон</h2>
+  <table>
+    <tr class="sign-row">
+      <td>Арендодатель:<br><br><br>________________________<br><small>{lessor_name}</small></td>
+      <td>Арендатор:<br><br><br>________________________<br><small>{renter_name}</small></td>
+    </tr>
+  </table>
+</body>
+</html>"""
+
+
+def _generate_act_html(rental: RentalModel, completed_by: str) -> str:
+    start_date  = rental.start_date.strftime('%d.%m.%Y %H:%M')
+    end_date    = rental.end_date.strftime('%d.%m.%Y %H:%M')
+    actual_date = rental.actual_return_date.strftime('%d.%m.%Y %H:%M') if rental.actual_return_date else "—"
+    now_date    = datetime.now().strftime('%d.%m.%Y')
+    who         = "Арендодателем" if completed_by == "lessor" else "Арендатором"
+
+    lessor_name = rental.lessor_company.name if rental.lessor_company else "—"
+    renter_name = rental.renter_company.name if rental.renter_company else "—"
+    car_brand   = rental.car.brand           if rental.car else "—"
+    car_model   = rental.car.model           if rental.car else "—"
+    car_plate   = rental.car.plate_number    if rental.car else "—"
+    base_total  = rental.base_price_total
+    extra_fee   = rental.extra_days_fee
+
+    return f"""<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Акт приёма-передачи</title>
+  <style>
+    @page {{ size: A4; margin: 2cm; }}
+    body {{ font-family: Arial, sans-serif; font-size: 12px; line-height: 1.5; color: #000; }}
+    h1 {{ text-align: center; font-size: 16px; margin-bottom: 20px; }}
+    table {{ width: 100%; border-collapse: collapse; margin: 15px 0; }}
+    th, td {{ padding: 8px 10px; border: 1px solid #000; font-size: 12px; }}
+    th {{ background: #f0f0f0; text-align: left; }}
+    .sign-row td {{ border: none; padding: 30px 10px 0; vertical-align: top; width: 50%; }}
+  </style>
+</head>
+<body>
+  <h1>АКТ ПРИЁМА-ПЕРЕДАЧИ ТРАНСПОРТНОГО СРЕДСТВА</h1>
+  <p style="text-align:right">Дата: {now_date} | Завершена {who}</p>
+
+  <table>
+    <tr><th style="width:35%">Арендодатель</th><td>{lessor_name}</td></tr>
+    <tr><th>Арендатор</th><td>{renter_name}</td></tr>
+    <tr><th>Автомобиль</th><td>{car_brand} {car_model} ({car_plate})</td></tr>
+    <tr><th>Начало аренды</th><td>{start_date}</td></tr>
+    <tr><th>Плановое окончание</th><td>{end_date}</td></tr>
+    <tr><th>Фактический возврат</th><td>{actual_date}</td></tr>
+    <tr><th>Базовая стоимость</th><td>{base_total} руб.</td></tr>
+    <tr><th>Доп. дни (просрочка)</th><td>{extra_fee} руб.</td></tr>
+    <tr><th><strong>Итого к оплате</strong></th><td><strong>{float(base_total) + float(extra_fee):.2f} руб.</strong></td></tr>
+  </table>
+
+  <table>
+    <tr class="sign-row">
+      <td>Арендодатель:<br><br><br>________________________<br><small>{lessor_name}</small></td>
+      <td>Арендатор:<br><br><br>________________________<br><small>{renter_name}</small></td>
+    </tr>
+  </table>
+</body>
+</html>"""
+
+
+def _generate_invoice_html(rental: RentalModel) -> str:
+    now_date    = datetime.now().strftime('%d.%m.%Y')
+
+    lessor_name = rental.lessor_company.name if rental.lessor_company else "—"
+    lessor_inn  = rental.lessor_company.inn  if rental.lessor_company else "—"
+    renter_name = rental.renter_company.name if rental.renter_company else "—"
+    renter_inn  = rental.renter_company.inn  if rental.renter_company else "—"
+    car_brand   = rental.car.brand           if rental.car else "—"
+    car_model   = rental.car.model           if rental.car else "—"
+    car_plate   = rental.car.plate_number    if rental.car else "—"
+    base_total  = rental.base_price_total
+    extra_fee   = rental.extra_days_fee
+    grand_total = float(base_total) + float(extra_fee)
+
+    return f"""<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Счёт-фактура</title>
+  <style>
+    @page {{ size: A4; margin: 2cm; }}
+    body {{ font-family: Arial, sans-serif; font-size: 12px; line-height: 1.5; color: #000; }}
+    h1 {{ text-align: center; font-size: 16px; margin-bottom: 20px; }}
+    table {{ width: 100%; border-collapse: collapse; margin: 15px 0; }}
+    th, td {{ padding: 8px 10px; border: 1px solid #000; font-size: 12px; }}
+    th {{ background: #f0f0f0; text-align: left; }}
+    .sign-row td {{ border: none; padding: 30px 10px 0; vertical-align: top; width: 50%; }}
+  </style>
+</head>
+<body>
+  <h1>СЧЁТ-ФАКТУРА № {str(rental.id)[:8].upper()}</h1>
+  <p style="text-align:right">Дата: {now_date}</p>
+
+  <table>
+    <tr><th style="width:35%">Продавец (Арендодатель)</th><td>{lessor_name}, ИНН: {lessor_inn}</td></tr>
+    <tr><th>Покупатель (Арендатор)</th><td>{renter_name}, ИНН: {renter_inn}</td></tr>
+  </table>
+
+  <table>
+    <tr>
+      <th>Наименование</th><th>Ед.</th><th>Кол-во</th><th>Сумма</th>
+    </tr>
+    <tr>
+      <td>Аренда {car_brand} {car_model} ({car_plate})</td>
+      <td>услуга</td><td>1</td><td>{base_total} руб.</td>
+    </tr>
+    <tr>
+      <td>Доп. дни (просрочка)</td>
+      <td>услуга</td><td>1</td><td>{extra_fee} руб.</td>
+    </tr>
+    <tr>
+      <td colspan="3"><strong>ИТОГО:</strong></td>
+      <td><strong>{grand_total:.2f} руб.</strong></td>
+    </tr>
+  </table>
+
+  <table>
+    <tr class="sign-row">
+      <td>Продавец:<br><br><br>________________________<br><small>{lessor_name}</small></td>
+      <td>Покупатель:<br><br><br>________________________<br><small>{renter_name}</small></td>
+    </tr>
+  </table>
+</body>
+</html>"""
+
+
+# ─── Service ──────────────────────────────────────────────────────────────────
+
 class ContractService:
+    """
+    Все методы создают СОБСТВЕННУЮ сессию — не принимают внешнюю.
+    Можно вызывать через asyncio.create_task() без риска конфликта сессий.
+    """
+
     @staticmethod
-    def _generate_contract_html(rental: RentalModel) -> str:
-        start_date = rental.start_date.strftime('%d.%m.%Y %H:%M')
-        end_date = rental.end_date.strftime('%d.%m.%Y %H:%M')
-        now_date = datetime.now().strftime('%d.%m.%Y')
+    def _make_pdf(html: str) -> bytes:
+        """Синхронная генерация PDF. Запускать через run_in_executor."""
+        result = HTML(string=html).write_pdf()
+        return result or b""
 
-        return f"""
-        <!DOCTYPE html>
-        <html lang="ru">
-        <head>
-            <meta charset="UTF-8">
-            <title>Договор аренды автомобиля</title>
-            <style>
-                @page {{
-                    size: A4;
-                    margin: 2cm;
-                }}
-                body {{
-                    font-family: 'Arial', sans-serif;
-                    font-size: 12px;
-                    line-height: 1.5;
-                    color: #000;
-                }}
-                h1 {{
-                    text-align: center;
-                    font-size: 18px;
-                    margin-bottom: 20px;
-                }}
-                h2 {{
-                    font-size: 14px;
-                    margin-top: 25px;
-                    margin-bottom: 10px;
-                }}
-                table {{
-                    width: 100%;
-                    border-collapse: collapse;
-                    margin: 15px 0;
-                }}
-                th, td {{
-                    padding: 8px 10px;
-                    border: 1px solid #000;
-                    text-align: left;
-                    font-size: 12px;
-                }}
-                th {{
-                    background-color: #f0f0f0;
-                    width: 200px;
-                }}
-                p {{
-                    margin: 8px 0;
-                }}
-                .signature-table {{
-                    margin-top: 50px;
-                }}
-                .signature-table td {{
-                    border: none;
-                    padding: 30px 10px 0 10px;
-                    vertical-align: top;
-                    width: 50%;
-                }}
-                .signature-line {{
-                    border-bottom: 1px solid #000;
-                    margin-top: 30px;
-                }}
-            </style>
-        </head>
-        <body>
-            <h1>ДОГОВОР АРЕНДЫ АВТОМОБИЛЯ №{rental.id}</h1>
+    # ── Contract ──────────────────────────────────────────────────────────────
 
-            <p>г. Минск, {now_date}</p>
-
-            <h2>1. Стороны договора</h2>
-            <table>
-                <tr>
-                    <th>Арендодатель (LESSOR)</th>
-                    <td>
-                        <strong>{rental.lessor_company.name}</strong><br>
-                        ИНН: {rental.lessor_company.inn}
-                    </td>
-                </tr>
-                <tr>
-                    <th>Арендатор (RENTER)</th>
-                    <td>
-                        <strong>{rental.renter_company.name}</strong><br>
-                        ИНН: {rental.renter_company.inn}
-                    </td>
-                </tr>
-            </table>
-
-            <h2>2. Автомобиль</h2>
-            <table>
-                <tr>
-                    <th>Марка и модель</th>
-                    <td>{rental.car.brand} {rental.car.model}</td>
-                </tr>
-                <tr>
-                    <th>Год выпуска</th>
-                    <td>{rental.car.year}</td>
-                </tr>
-                <tr>
-                    <th>Гос. номер</th>
-                    <td>{rental.car.plate_number}</td>
-                </tr>
-                <tr>
-                    <th>VIN</th>
-                    <td>{rental.car.vin}</td>
-                </tr>
-            </table>
-
-            <h2>3. Условия аренды</h2>
-            <table>
-                <tr>
-                    <th>Водитель</th>
-                    <td>{rental.user.full_name}</td>
-                </tr>
-                <tr>
-                    <th>Начало аренды</th>
-                    <td>{start_date}</td>
-                </tr>
-                <tr>
-                    <th>Конец аренды</th>
-                    <td>{end_date}</td>
-                </tr>
-                <tr>
-                    <th>Стоимость аренды</th>
-                    <td>{rental.base_price_total:,.2f} ₽</td>
-                </tr>
-            </table>
-
-            <table class="signature-table">
-                <tr>
-                    <td>
-                        <strong>Арендодатель:</strong><br><br>
-                        <div class="signature-line"></div>
-                        <small>{rental.lessor_company.name}</small>
-                    </td>
-                    <td>
-                        <strong>Арендатор:</strong><br><br>
-                        <div class="signature-line"></div>
-                        <small>{rental.renter_company.name}</small>
-                    </td>
-                </tr>
-            </table>
-        </body>
-        </html>
+    @staticmethod
+    async def generate_and_upload_contract(rental_id: str) -> None:
         """
-
-    @staticmethod
-    def _generate_pdf_bytes(rental: RentalModel) -> bytes:
-
-        html_content = ContractService._generate_contract_html(rental)
-
-        pdf_bytes = HTML(string=html_content).write_pdf()
-        return pdf_bytes
-
-    @staticmethod
-    async def generate_and_upload_contract(
-            rental: RentalModel,
-            session: AsyncSession
-    ) -> RentalDocumentsModel:
-        import asyncio
-
-        loop = asyncio.get_event_loop()
-        pdf_bytes = await loop.run_in_executor(
-            None,
-            ContractService._generate_pdf_bytes,
-            rental
-        )
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        object_name = f"rental_documents/{rental.id}/contract_{timestamp}.pdf"
-
-        pdf_file = io.BytesIO(pdf_bytes)
-        await minio_client.upload_file(
-            file_data=pdf_file,
-            object_name=object_name,
-            content_type="application/pdf",
-            metadata={
-                "rental_id": str(rental.id),
-                "document_type": "contract",
-                "lessor_company": rental.lessor_company.name,
-                "renter_company": rental.renter_company.name,
-            }
-        )
-
-        document = RentalDocumentsModel(
-            rental_id=rental.id,
-            type=RentalDocumentType.CONTRACT,
-            file_path=object_name,
-        )
-        session.add(document)
-        await session.commit()
-        await session.refresh(document)
-
-        logger.info(f"Contract generated and uploaded for rental {rental.id}: {object_name}")
-        return document
-
-    @staticmethod
-    def _generate_act_html(rental: RentalModel, completed_by: str) -> str:
-        start_date = rental.start_date.strftime('%d.%m.%Y %H:%M')
-        end_date = rental.end_date.strftime('%d.%m.%Y %H:%M')
-        actual_date = rental.actual_return_date.strftime('%d.%m.%Y %H:%M') if rental.actual_return_date else "—"
-        now_date = datetime.now().strftime('%d.%m.%Y')
-        completed_text = "Арендодателем" if completed_by == "lessor" else "Арендатором"
-
-        return f"""
-        <!DOCTYPE html>
-        <html lang="ru">
-        <head>
-            <meta charset="UTF-8">
-            <title>Акт приёма-передачи автомобиля</title>
-            <style>
-                @page {{ size: A4; margin: 2cm; }}
-                body {{ font-family: 'Arial', sans-serif; font-size: 12px; line-height: 1.5; }}
-                h1 {{ text-align: center; font-size: 16px; margin-bottom: 20px; }}
-                table {{ width: 100%; border-collapse: collapse; margin: 15px 0; }}
-                th, td {{ padding: 8px 10px; border: 1px solid #000; text-align: left; font-size: 12px; }}
-                th {{ background-color: #f0f0f0; width: 250px; }}
-                .signature-table {{ margin-top: 50px; }}
-                .signature-table td {{ border: none; padding: 30px 10px 0 10px; vertical-align: top; width: 50%; }}
-                .signature-line {{ border-bottom: 1px solid #000; margin-top: 30px; }}
-            </style>
-        </head>
-        <body>
-            <h1>АКТ ПРИЁМА-ПЕРЕДАЧИ АВТОМОБИЛЯ<br>к договору аренды №{rental.id}</h1>
-
-            <p>г. Минск, {now_date}</p>
-
-            <p>Настоящий акт составлен о том, что автомобиль возвращён {completed_text}.</p>
-
-            <table>
-                <tr><th>Арендодатель</th><td>{rental.lessor_company.name} (ИНН: {rental.lessor_company.inn})</td></tr>
-                <tr><th>Арендатор</th><td>{rental.renter_company.name} (ИНН: {rental.renter_company.inn})</td></tr>
-                <tr><th>Автомобиль</th><td>{rental.car.brand} {rental.car.model}, гос. номер {rental.car.plate_number}, VIN: {rental.car.vin}</td></tr>
-                <tr><th>Водитель</th><td>{rental.user.full_name}</td></tr>
-                <tr><th>Период аренды</th><td>с {start_date} по {end_date}</td></tr>
-                <tr><th>Фактическая дата возврата</th><td>{actual_date}</td></tr>
-                <tr><th>Стоимость аренды</th><td>{rental.base_price_total:,.2f} ₽</td></tr>
-                <tr><th>Доплата за просрочку</th><td>{rental.extra_days_fee:,.2f} ₽</td></tr>
-                <tr><th>Статус оплаты</th><td>{"Оплачено" if rental.is_paid else "Не оплачено"}</td></tr>
-            </table>
-
-            <p>Автомобиль возвращён в исправном состоянии. Стороны претензий друг к другу не имеют.</p>
-
-            <table class="signature-table">
-                <tr>
-                    <td>
-                        <strong>Арендодатель:</strong><br><br>
-                        <div class="signature-line"></div>
-                        <small>{rental.lessor_company.name}</small>
-                    </td>
-                    <td>
-                        <strong>Арендатор:</strong><br><br>
-                        <div class="signature-line"></div>
-                        <small>{rental.renter_company.name}</small>
-                    </td>
-                </tr>
-            </table>
-        </body>
-        </html>
+        Генерирует договор и сохраняет запись в БД.
+        Принимает rental_id (str), открывает собственную сессию.
         """
+        from src.db.session import db
+        from sqlalchemy import select
+        from sqlalchemy.orm import joinedload
+
+        try:
+            async with db.session_factory() as session:
+                # Загружаем аренду с нужными relations
+                stmt = (
+                    select(RentalModel)
+                    .where(RentalModel.id == rental_id)
+                    .options(
+                        joinedload(RentalModel.lessor_company),
+                        joinedload(RentalModel.renter_company),
+                        joinedload(RentalModel.car),
+                    )
+                )
+                result = await session.execute(stmt)
+                rental = result.unique().scalar_one_or_none()
+                if not rental:
+                    logger.error(f"[Contract] Rental {rental_id} not found")
+                    return
+
+                # Генерируем PDF в thread pool
+                loop = asyncio.get_running_loop()
+                html = _generate_contract_html(rental)
+                pdf_bytes = await loop.run_in_executor(
+                    None, ContractService._make_pdf, html
+                )
+
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                object_name = f"rental_documents/{rental_id}/contract_{timestamp}.pdf"
+
+                await minio_client.upload_file(
+                    file_data=io.BytesIO(pdf_bytes),
+                    object_name=object_name,
+                    content_type="application/pdf",
+                    metadata={"rental-id": str(rental_id), "document-type": "contract"},
+                )
+
+                doc = RentalDocumentsModel(
+                    rental_id=rental.id,
+                    type=RentalDocumentType.CONTRACT,
+                    file_path=object_name,
+                )
+                session.add(doc)
+                await session.commit()
+                logger.info(f"[Contract] Generated for rental {rental_id}: {object_name}")
+
+        except Exception as exc:
+            logger.exception(f"[Contract] Failed to generate contract for rental {rental_id}: {exc}")
+
+    # ── Act ───────────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _generate_invoice_html(rental: RentalModel) -> str:
-        now_date = datetime.now().strftime('%d.%m.%Y')
-        total = rental.base_price_total + rental.extra_days_fee
+    async def generate_and_upload_act(rental_id: str, completed_by: str = "lessor") -> None:
+        """Генерирует акт приёма-передачи."""
+        from src.db.session import db
+        from sqlalchemy import select
+        from sqlalchemy.orm import joinedload
 
-        return f"""
-        <!DOCTYPE html>
-        <html lang="ru">
-        <head>
-            <meta charset="UTF-8">
-            <title>Счёт-фактура</title>
-            <style>
-                @page {{ size: A4; margin: 2cm; }}
-                body {{ font-family: 'Arial', sans-serif; font-size: 12px; line-height: 1.5; }}
-                h1 {{ text-align: center; font-size: 16px; margin-bottom: 20px; }}
-                table {{ width: 100%; border-collapse: collapse; margin: 15px 0; }}
-                th, td {{ padding: 8px 10px; border: 1px solid #000; text-align: left; font-size: 12px; }}
-                th {{ background-color: #f0f0f0; width: 250px; }}
-                .total {{ font-weight: bold; font-size: 14px; }}
-            </style>
-        </head>
-        <body>
-            <h1>СЧЁТ-ФАКТУРА №{rental.id}<br>к договору аренды №{rental.id}</h1>
+        try:
+            async with db.session_factory() as session:
+                stmt = (
+                    select(RentalModel)
+                    .where(RentalModel.id == rental_id)
+                    .options(
+                        joinedload(RentalModel.lessor_company),
+                        joinedload(RentalModel.renter_company),
+                        joinedload(RentalModel.car),
+                    )
+                )
+                result = await session.execute(stmt)
+                rental = result.unique().scalar_one_or_none()
+                if not rental:
+                    logger.error(f"[Act] Rental {rental_id} not found")
+                    return
 
-            <p>г. Минск, {now_date}</p>
+                loop = asyncio.get_running_loop()
+                html = _generate_act_html(rental, completed_by)
+                pdf_bytes = await loop.run_in_executor(
+                    None, ContractService._make_pdf, html
+                )
 
-            <table>
-                <tr><th>Продавец</th><td>{rental.lessor_company.name}<br>ИНН: {rental.lessor_company.inn}</td></tr>
-                <tr><th>Покупатель</th><td>{rental.renter_company.name}<br>ИНН: {rental.renter_company.inn}</td></tr>
-                <tr><th>Основание</th><td>Договор аренды автомобиля №{rental.id}</td></tr>
-                <tr><th>Автомобиль</th><td>{rental.car.brand} {rental.car.model}, {rental.car.plate_number}</td></tr>
-                <tr><th>Период аренды</th><td>{rental.start_date.strftime('%d.%m.%Y %H:%M')} — {rental.end_date.strftime('%d.%m.%Y %H:%M')}</td></tr>
-            </table>
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                object_name = f"rental_documents/{rental_id}/act_{timestamp}.pdf"
 
-            <table>
-                <tr>
-                    <th>№</th>
-                    <th>Наименование</th>
-                    <th>Сумма</th>
-                </tr>
-                <tr>
-                    <td>1</td>
-                    <td>Аренда автомобиля за период</td>
-                    <td>{rental.base_price_total:,.2f} ₽</td>
-                </tr>
-                <tr>
-                    <td>2</td>
-                    <td>Доплата за просрочку</td>
-                    <td>{rental.extra_days_fee:,.2f} ₽</td>
-                </tr>
-                <tr class="total">
-                    <td colspan="2">ИТОГО:</td>
-                    <td>{total:,.2f} ₽</td>
-                </tr>
-            </table>
+                await minio_client.upload_file(
+                    file_data=io.BytesIO(pdf_bytes),
+                    object_name=object_name,
+                    content_type="application/pdf",
+                    metadata={"rental-id": str(rental_id), "document-type": "act"},
+                )
 
-            <p>Статус оплаты: {"Оплачено" if rental.is_paid else "Не оплачено"}</p>
+                doc = RentalDocumentsModel(
+                    rental_id=rental.id,
+                    type=RentalDocumentType.ACT,
+                    file_path=object_name,
+                )
+                session.add(doc)
+                await session.commit()
+                logger.info(f"[Act] Generated for rental {rental_id}: {object_name}")
 
-            <table class="signature-table" style="margin-top: 50px;">
-                <tr>
-                    <td style="border: none; padding: 30px 10px 0 10px; vertical-align: top; width: 50%;">
-                        <strong>Продавец:</strong><br><br>
-                        <div class="signature-line" style="border-bottom: 1px solid #000; margin-top: 30px;"></div>
-                        <small>{rental.lessor_company.name}</small>
-                    </td>
-                    <td style="border: none; padding: 30px 10px 0 10px; vertical-align: top; width: 50%;">
-                        <strong>Покупатель:</strong><br><br>
-                        <div class="signature-line" style="border-bottom: 1px solid #000; margin-top: 30px;"></div>
-                        <small>{rental.renter_company.name}</small>
-                    </td>
-                </tr>
-            </table>
-        </body>
-        </html>
-        """
+        except Exception as exc:
+            logger.exception(f"[Act] Failed to generate act for rental {rental_id}: {exc}")
+
+    # ── Invoice ───────────────────────────────────────────────────────────────
 
     @staticmethod
-    async def generate_and_upload_act(
-            rental: RentalModel,
-            completed_by: str,
-            session: AsyncSession
-    ) -> RentalDocumentsModel:
-        loop = asyncio.get_event_loop()
+    async def generate_and_upload_invoice(rental_id: str) -> None:
+        """Генерирует счёт-фактуру."""
+        from src.db.session import db
+        from sqlalchemy import select
+        from sqlalchemy.orm import joinedload
 
-        def generate_act_pdf():
-            html_content = ContractService._generate_act_html(rental, completed_by)
-            return HTML(string=html_content).write_pdf()
+        try:
+            async with db.session_factory() as session:
+                stmt = (
+                    select(RentalModel)
+                    .where(RentalModel.id == rental_id)
+                    .options(
+                        joinedload(RentalModel.lessor_company),
+                        joinedload(RentalModel.renter_company),
+                        joinedload(RentalModel.car),
+                    )
+                )
+                result = await session.execute(stmt)
+                rental = result.unique().scalar_one_or_none()
+                if not rental:
+                    logger.error(f"[Invoice] Rental {rental_id} not found")
+                    return
 
-        pdf_bytes = await loop.run_in_executor(None, generate_act_pdf)
+                loop = asyncio.get_running_loop()
+                html = _generate_invoice_html(rental)
+                pdf_bytes = await loop.run_in_executor(
+                    None, ContractService._make_pdf, html
+                )
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        object_name = f"rental_documents/{rental.id}/act_{timestamp}.pdf"
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                object_name = f"rental_documents/{rental_id}/invoice_{timestamp}.pdf"
 
-        pdf_file = io.BytesIO(pdf_bytes)
-        await minio_client.upload_file(
-            file_data=pdf_file,
-            object_name=object_name,
-            content_type="application/pdf",
-            metadata={
-                "rental_id": str(rental.id),
-                "document_type": "act",
-                "completed_by": completed_by,
-            }
-        )
+                await minio_client.upload_file(
+                    file_data=io.BytesIO(pdf_bytes),
+                    object_name=object_name,
+                    content_type="application/pdf",
+                    metadata={"rental-id": str(rental_id), "document-type": "invoice"},
+                )
 
-        document = RentalDocumentsModel(
-            rental_id=rental.id,
-            type=RentalDocumentType.ACT,
-            file_path=object_name,
-        )
-        session.add(document)
-        await session.commit()
-        await session.refresh(document)
+                doc = RentalDocumentsModel(
+                    rental_id=rental.id,
+                    type=RentalDocumentType.INVOICE,
+                    file_path=object_name,
+                )
+                session.add(doc)
+                await session.commit()
+                logger.info(f"[Invoice] Generated for rental {rental_id}: {object_name}")
 
-        logger.info(f"Act generated for rental {rental.id}: {object_name}")
-        return document
-
-    @staticmethod
-    async def generate_and_upload_invoice(
-            rental: RentalModel,
-            session: AsyncSession
-    ) -> RentalDocumentsModel:
-
-        import asyncio
-
-        loop = asyncio.get_event_loop()
-
-        def generate_invoice_pdf():
-            html_content = ContractService._generate_invoice_html(rental)
-            return HTML(string=html_content).write_pdf()
-
-        pdf_bytes = await loop.run_in_executor(None, generate_invoice_pdf)
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        object_name = f"rental_documents/{rental.id}/invoice_{timestamp}.pdf"
-
-        pdf_file = io.BytesIO(pdf_bytes)
-        await minio_client.upload_file(
-            file_data=pdf_file,
-            object_name=object_name,
-            content_type="application/pdf",
-            metadata={
-                "rental_id": str(rental.id),
-                "document_type": "invoice",
-            }
-        )
-
-        document = RentalDocumentsModel(
-            rental_id=rental.id,
-            type=RentalDocumentType.INVOICE,
-            file_path=object_name,
-        )
-        session.add(document)
-        await session.commit()
-        await session.refresh(document)
-
-        logger.info(f"Invoice generated for rental {rental.id}: {object_name}")
-        return document
+        except Exception as exc:
+            logger.exception(f"[Invoice] Failed to generate invoice for rental {rental_id}: {exc}")

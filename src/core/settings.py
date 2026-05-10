@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     MINIO_SECURE: bool
     MINIO_PUBLIC_URL: str
 
+    # Базовый URL приложения (для IoT симулятора)
+    APP_BASE_URL: str = "http://localhost:8000"
+
     @property
     def MINIO_URL(self) -> str:
         protocol = "https" if self.MINIO_SECURE else "http"

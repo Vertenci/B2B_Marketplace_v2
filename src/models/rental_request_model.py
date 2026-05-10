@@ -30,7 +30,6 @@ class RentalRequestModel(Base, IdMixin, CreatedAtMixin):
         UUID(as_uuid=True),
         ForeignKey("cars.id", ondelete="CASCADE"),
         nullable=False,
-        unique=True,
     )
 
     driver_id: Mapped[uuid.UUID] = mapped_column(

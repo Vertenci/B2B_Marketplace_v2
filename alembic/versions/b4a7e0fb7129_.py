@@ -1,8 +1,8 @@
-"""ini db2
+"""empty message
 
-Revision ID: 8720f20788fc
-Revises: 888577567f63
-Create Date: 2026-04-21 19:57:36.192243
+Revision ID: b4a7e0fb7129
+Revises: 
+Create Date: 2026-05-10 13:53:03.571118
 
 """
 from typing import Sequence, Union
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '8720f20788fc'
-down_revision: Union[str, Sequence[str], None] = '888577567f63'
+revision: str = 'b4a7e0fb7129'
+down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -33,6 +33,21 @@ def upgrade() -> None:
     sa.UniqueConstraint('inn'),
     sa.UniqueConstraint('name')
     )
+    op.create_table('documents',
+    sa.Column('title', sa.String(length=255), nullable=False),
+    sa.Column('description', sa.Text(), nullable=True),
+    sa.Column('document_type', sa.Enum('public_offer', 'driver_offer', name='document_type_enum'), nullable=False),
+    sa.Column('version', sa.String(length=50), nullable=False),
+    sa.Column('file_path', sa.String(length=500), nullable=False, comment='Путь к файлу в MinIO (bucket/path/file.pdf)'),
+    sa.Column('file_name', sa.String(length=255), nullable=False),
+    sa.Column('file_size', sa.Integer(), nullable=True, comment='Размер файла в байтах'),
+    sa.Column('mime_type', sa.String(length=100), nullable=False),
+    sa.Column('is_active', sa.Boolean(), nullable=False, comment='Актуальная версия документа'),
+    sa.Column('published_at', sa.DateTime(timezone=True), nullable=True, comment='Дата публикации документа'),
+    sa.Column('id', sa.UUID(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.PrimaryKeyConstraint('id')
+    )
     op.create_table('users',
     sa.Column('email', sa.String(length=255), nullable=False),
     sa.Column('password_hash', sa.String(length=255), nullable=False),
@@ -40,6 +55,7 @@ def upgrade() -> None:
     sa.Column('full_name', sa.String(length=150), nullable=False),
     sa.Column('role', sa.Enum('admin', 'user', name='user_role'), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.Column('public_offer_accepted', sa.Boolean(), nullable=False),
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.PrimaryKeyConstraint('id'),
@@ -69,7 +85,6 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['owner_company_id'], ['companies.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('owner_company_id'),
     sa.UniqueConstraint('plate_number')
     )
     op.create_table('company_users',
@@ -117,13 +132,13 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('iot_devices',
-    sa.Column('car_id', sa.UUID(), nullable=False),
+    sa.Column('car_id', sa.UUID(), nullable=True),
     sa.Column('device_identifier', sa.String(length=255), nullable=True),
     sa.Column('sim_number', sa.String(length=100), nullable=True),
     sa.Column('battery_level', sa.Integer(), nullable=True),
     sa.Column('is_online', sa.Boolean(), nullable=False),
     sa.Column('id', sa.UUID(), nullable=False),
-    sa.ForeignKeyConstraint(['car_id'], ['cars.id'], ondelete='CASCADE'),
+    sa.ForeignKeyConstraint(['car_id'], ['cars.id'], ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('device_identifier')
     )
@@ -246,5 +261,6 @@ def downgrade() -> None:
     op.drop_table('cars')
     op.drop_table('agreements')
     op.drop_table('users')
+    op.drop_table('documents')
     op.drop_table('companies')
     # ### end Alembic commands ###

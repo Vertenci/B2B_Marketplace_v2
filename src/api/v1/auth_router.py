@@ -13,7 +13,13 @@ router = APIRouter(
 
 @router.post("/register")
 async def register(data: RegisterRequest, session: AsyncSession = Depends(db.get_session)):
-    user = await AuthService.register(email=data.email, password=data.password, session=session)
+    user = await AuthService.register(
+        email=data.email,
+        password=data.password,
+        phone=data.phone,
+        full_name=data.full_name,
+        session=session,
+    )
     return {
         "id": str(user.id),
         "email": user.email,

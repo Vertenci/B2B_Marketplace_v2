@@ -12,7 +12,11 @@ oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl="/api/v1/auth/login"
 )
 
-async def get_current_user(token: str = Depends(oauth2_scheme), session: AsyncSession = Depends(db.get_session)) -> UserModel:
+
+async def get_current_user(
+        token: str = Depends(oauth2_scheme),
+        session: AsyncSession = Depends(db.get_session)
+) -> UserModel:
     try:
         payload = jwt.decode(
             token,
@@ -30,7 +34,23 @@ async def get_current_user(token: str = Depends(oauth2_scheme), session: AsyncSe
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="User account is inactive")
+
     return user
+
+
+async def get_current_user_with_offer(
+        user: UserModel = Depends(get_current_user)
+) -> UserModel:
+    """Требует принятия публичной оферты."""
+    if not user.public_offer_accepted:
+        raise HTTPException(
+            status_code=403,
+            detail="You must accept the public offer before using this service"
+        )
+    return user
+
 
 def require_role(role: str):
     async def checker(user: UserModel = Depends(get_current_user)):

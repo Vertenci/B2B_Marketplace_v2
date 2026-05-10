@@ -26,7 +26,6 @@ class CarModel(Base, IdMixin, CreatedAtMixin):
         UUID(as_uuid=True),
         ForeignKey("companies.id", ondelete="CASCADE"),
         nullable=False,
-        unique=True,
     )
 
     brand: Mapped[str] = mapped_column(

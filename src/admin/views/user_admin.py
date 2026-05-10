@@ -120,7 +120,7 @@ class UserAdmin(BaseAdmin, model=UserModel):
             request: Request,
     ):
         if is_created:
-            model.system_role = UserRole.USER
+            model.role = UserRole.USER
 
         password = data.pop("password", None)
         data.pop("password_hash", None)
@@ -135,5 +135,5 @@ class UserAdmin(BaseAdmin, model=UserModel):
         return await super().on_model_change(data, model, is_created, request)
 
     async def on_model_delete(self, model: Any, request: Request) -> None:
-        if model.system_role == UserRole.ADMIN:
-            raise ValueError("Cannot delete developer user")
+        if model.role == UserRole.ADMIN:
+            raise ValueError("Cannot delete admin user")
