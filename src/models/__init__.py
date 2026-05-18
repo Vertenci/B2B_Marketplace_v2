@@ -1,5 +1,6 @@
 from src.models.agreement_model import AgreementModel
 from src.models.car_model import CarModel
+from src.models.balance_event_model import BalanceEventModel
 from src.models.company_model import CompanyModel
 from src.models.company_users_model import CompanyUserModel
 from src.models.driver_license_model import DriverLicenseModel

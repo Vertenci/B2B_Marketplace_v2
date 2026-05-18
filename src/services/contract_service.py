@@ -1,11 +1,3 @@
-"""
-ContractService — генерирует PDF и сохраняет документы в MinIO.
-
-ВАЖНО: каждый async метод открывает СОБСТВЕННУЮ сессию через db.session_factory.
-Никакая внешняя сессия сюда НЕ передаётся — это предотвращает
-"cannot perform operation: another operation is in progress"
-при запуске через asyncio.create_task().
-"""
 import asyncio
 import io
 import logging
@@ -19,8 +11,6 @@ from src.models.enums import RentalDocumentType
 
 logger = logging.getLogger(__name__)
 
-
-# ─── HTML Generators ──────────────────────────────────────────────────────────
 
 def _generate_contract_html(rental: RentalModel) -> str:
     start_date = rental.start_date.strftime('%d.%m.%Y %H:%M')
@@ -209,35 +199,20 @@ def _generate_invoice_html(rental: RentalModel) -> str:
 </html>"""
 
 
-# ─── Service ──────────────────────────────────────────────────────────────────
-
 class ContractService:
-    """
-    Все методы создают СОБСТВЕННУЮ сессию — не принимают внешнюю.
-    Можно вызывать через asyncio.create_task() без риска конфликта сессий.
-    """
-
     @staticmethod
     def _make_pdf(html: str) -> bytes:
-        """Синхронная генерация PDF. Запускать через run_in_executor."""
         result = HTML(string=html).write_pdf()
         return result or b""
 
-    # ── Contract ──────────────────────────────────────────────────────────────
-
     @staticmethod
     async def generate_and_upload_contract(rental_id: str) -> None:
-        """
-        Генерирует договор и сохраняет запись в БД.
-        Принимает rental_id (str), открывает собственную сессию.
-        """
         from src.db.session import db
         from sqlalchemy import select
         from sqlalchemy.orm import joinedload
 
         try:
             async with db.session_factory() as session:
-                # Загружаем аренду с нужными relations
                 stmt = (
                     select(RentalModel)
                     .where(RentalModel.id == rental_id)
@@ -253,7 +228,6 @@ class ContractService:
                     logger.error(f"[Contract] Rental {rental_id} not found")
                     return
 
-                # Генерируем PDF в thread pool
                 loop = asyncio.get_running_loop()
                 html = _generate_contract_html(rental)
                 pdf_bytes = await loop.run_in_executor(
@@ -282,11 +256,8 @@ class ContractService:
         except Exception as exc:
             logger.exception(f"[Contract] Failed to generate contract for rental {rental_id}: {exc}")
 
-    # ── Act ───────────────────────────────────────────────────────────────────
-
     @staticmethod
     async def generate_and_upload_act(rental_id: str, completed_by: str = "lessor") -> None:
-        """Генерирует акт приёма-передачи."""
         from src.db.session import db
         from sqlalchemy import select
         from sqlalchemy.orm import joinedload
@@ -336,11 +307,8 @@ class ContractService:
         except Exception as exc:
             logger.exception(f"[Act] Failed to generate act for rental {rental_id}: {exc}")
 
-    # ── Invoice ───────────────────────────────────────────────────────────────
-
     @staticmethod
     async def generate_and_upload_invoice(rental_id: str) -> None:
-        """Генерирует счёт-фактуру."""
         from src.db.session import db
         from sqlalchemy import select
         from sqlalchemy.orm import joinedload

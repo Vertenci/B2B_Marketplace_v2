@@ -51,8 +51,9 @@ class RentalService:
                 joinedload(RentalModel.payment).joinedload(PaymentModel.receiver_company),
                 selectinload(RentalModel.rental_documents),
                 selectinload(RentalModel.telemetries),
-                selectinload(RentalModel.geofence_events).joinedload(GeofenceEventModel.geofence),
-                selectinload(RentalModel.violations),
+                selectinload(RentalModel.violations)
+                .joinedload(ViolationModel.geofence_event)
+                .joinedload(GeofenceEventModel.geofence),
             )
         )
 
@@ -270,31 +271,26 @@ class RentalService:
         price_per_day = rental.car.price_per_day
 
         if now < rental.end_date:
-            # Завершена раньше — пересчитываем базовую цену
             days = (now - rental.start_date).days
             if days <= 0:
                 days = 1
             rental.base_price_total = price_per_day * Decimal(str(days))
             rental.extra_days_fee = Decimal("0.00")
         elif now > rental.end_date:
-            # Завершена позже — считаем доп. дни
             extra_days = (now - rental.end_date).days
             if extra_days > 0:
                 rental.extra_days_fee = price_per_day * Decimal(str(extra_days))
         else:
             rental.extra_days_fee = Decimal("0.00")
 
-        # Меняем статусы
         rental.status = RentalStatus.COMPLETED
         rental.car.status = CarStatus.AVAILABLE
 
         await session.commit()
         await session.refresh(rental)
 
-        # Загружаем все связи для генерации документов
         rental_with_relations = await RentalService._get_rental_by_id(rental.id, session)
 
-        # Асинхронно генерируем акт и счёт-фактуру
         from src.services.contract_service import ContractService
         asyncio.create_task(
             ContractService.generate_and_upload_act(str(rental.id), "lessor")

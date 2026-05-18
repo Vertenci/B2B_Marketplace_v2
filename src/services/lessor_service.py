@@ -1,9 +1,4 @@
-"""
-Сервис для всех операций Lessor компании.
-Все методы принимают company_id явно и проверяют принадлежность пользователя к компании.
-"""
 import asyncio
-import io
 import uuid
 from decimal import Decimal
 from datetime import datetime, timezone
@@ -31,21 +26,107 @@ from src.models import (
     GeofenceEventModel,
     ViolationModel,
     TelemetryModel,
-    RentalDocumentsModel,
+    RentalDocumentsModel, BalanceEventModel,
 )
 from src.models.enums import (
     CompanyType,
-    CompanyRole,
     CarStatus,
     RentalStatus,
     RentalRequestStatus,
     RentalDocumentType,
+    BalanceEventType,
 )
 
 
 class LessorService:
+    @staticmethod
+    async def top_up_company_balance(
+            company_id: uuid.UUID,
+            user: UserModel,
+            session: AsyncSession,
+            amount: Decimal,
+    ) -> CompanyModel:
+        if amount <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Amount must be greater than zero",
+            )
 
-    # ─────────────────────── Helpers ────────────────────────────────────────
+        company = await LessorService._verify_company_access(
+            company_id,
+            user,
+            session,
+        )
+
+        balance_before = company.balance
+
+        company.balance += amount
+
+        balance_after = company.balance
+
+        balance_event = BalanceEventModel(
+            company_id=company.id,
+            event_type=BalanceEventType.TOP_UP,
+            balance_before=balance_before,
+            balance_after=balance_after,
+            operation_amount=amount,
+        )
+
+        session.add(company)
+        session.add(balance_event)
+
+        await session.commit()
+        await session.refresh(company)
+
+        return company
+
+    @staticmethod
+    async def withdraw_company_balance(
+            company_id: uuid.UUID,
+            user: UserModel,
+            session: AsyncSession,
+            amount: Decimal,
+    ) -> CompanyModel:
+
+        if amount <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Amount must be greater than zero",
+            )
+
+        company = await LessorService._verify_company_access(
+            company_id,
+            user,
+            session,
+        )
+
+        if company.balance < amount:
+            raise HTTPException(
+                status_code=400,
+                detail="Insufficient balance",
+            )
+
+        balance_before = company.balance
+
+        company.balance -= amount
+
+        balance_after = company.balance
+
+        balance_event = BalanceEventModel(
+            company_id=company.id,
+            event_type=BalanceEventType.WITHDRAW,
+            balance_before=balance_before,
+            balance_after=balance_after,
+            operation_amount=amount,
+        )
+
+        session.add(company)
+        session.add(balance_event)
+
+        await session.commit()
+        await session.refresh(company)
+
+        return company
 
     @staticmethod
     async def _verify_company_access(
@@ -53,7 +134,6 @@ class LessorService:
             user: UserModel,
             session: AsyncSession
     ) -> CompanyModel:
-        """Убедиться что пользователь принадлежит этой LESSOR компании."""
         stmt = (
             select(CompanyModel)
             .join(CompanyUserModel, CompanyModel.id == CompanyUserModel.company_id)
@@ -75,16 +155,11 @@ class LessorService:
             iot: IotDeviceModel,
             session: AsyncSession,
     ) -> None:
-        """
-        Запустить IoT симулятор для устройства.
-        Выбирает первую активную геозону машины как центр орбиты.
-        """
         from src.clients.iot_simulator import iot_simulator, DEFAULT_CENTER_LAT, DEFAULT_CENTER_LNG, DEFAULT_ZONE_RADIUS
 
         if not iot.device_identifier:
             return
 
-        # Загружаем геозоны машины если не подгружены
         center_lat, center_lng, zone_radius = DEFAULT_CENTER_LAT, DEFAULT_CENTER_LNG, DEFAULT_ZONE_RADIUS
 
         if iot.car_id:
@@ -109,7 +184,6 @@ class LessorService:
 
     @staticmethod
     async def _maybe_start_simulator_for_car(car_id: uuid.UUID, session: AsyncSession) -> None:
-        """Найти IoT устройство машины и запустить симулятор."""
         try:
             result = await session.execute(
                 select(IotDeviceModel)
@@ -127,7 +201,6 @@ class LessorService:
 
     @staticmethod
     async def _maybe_stop_simulator_for_car(car_id: uuid.UUID, session: AsyncSession) -> None:
-        """Найти IoT устройство машины и остановить симулятор."""
         from src.clients.iot_simulator import iot_simulator
         try:
             result = await session.execute(
@@ -181,9 +254,6 @@ class LessorService:
         )
         result = await session.execute(stmt)
         return result.unique().scalar_one_or_none()
-
-    # ─────────────────────── Cars ───────────────────────────────────────────
-
     @staticmethod
     async def get_cars(
             company_id: uuid.UUID,
@@ -277,7 +347,6 @@ class LessorService:
         if not car:
             raise HTTPException(status_code=404, detail="Car not found")
 
-        # Нельзя редактировать если в аренде
         if car.status == CarStatus.RENTED:
             raise HTTPException(status_code=400, detail="Cannot edit car that is currently rented")
 
@@ -304,11 +373,9 @@ class LessorService:
         if not car:
             return False
 
-        # Нельзя удалить если в аренде
         if car.status == CarStatus.RENTED:
             raise HTTPException(status_code=400, detail="Cannot delete car that is currently rented")
 
-        # Останавливаем симулятор IoT для этой машины перед удалением
         iot_result = await session.execute(
             select(IotDeviceModel).where(IotDeviceModel.car_id == car_id)
         )
@@ -316,7 +383,6 @@ class LessorService:
         if iot:
             from src.clients.iot_simulator import iot_simulator
             iot_simulator.unregister(iot.id)
-            # car_id обнулится автоматически через SET NULL (ondelete)
 
         await session.execute(delete(CarModel).where(CarModel.id == car_id))
         await session.commit()
@@ -374,9 +440,7 @@ class LessorService:
         iot.car_id = car_id
         await session.commit()
 
-        # Запускаем симулятор после привязки (если есть identifier)
         if iot.device_identifier:
-            # Перезагружаем iot чтобы получить car.geofences
             result = await session.execute(
                 select(IotDeviceModel)
                 .where(IotDeviceModel.id == iot_id)
@@ -409,8 +473,6 @@ class LessorService:
             .options(joinedload(IotDeviceModel.car))
         )
         return result.unique().scalar_one_or_none()
-
-    # ─────────────────────── IoT Devices ─────────────────────────────────────
 
     @staticmethod
     async def get_iots(
@@ -454,7 +516,6 @@ class LessorService:
         iot = result.unique().scalar_one_or_none()
         if not iot:
             return None
-        # Проверяем принадлежность — либо привязан к машине компании, либо без привязки
         if iot.car_id:
             car_res = await session.execute(
                 select(CarModel).where(CarModel.id == iot.car_id, CarModel.owner_company_id == company_id)
@@ -482,7 +543,6 @@ class LessorService:
         session.add(iot)
         await session.commit()
 
-        # Перезагружаем с joinedload чтобы избежать lazy='raise'
         result = await session.execute(
             select(IotDeviceModel)
             .where(IotDeviceModel.id == iot.id)
@@ -490,8 +550,6 @@ class LessorService:
         )
         iot = result.unique().scalar_one()
 
-        # Запускаем симулятор только если устройство привязано к машине
-        # и device_identifier задан
         if iot.device_identifier and iot.car_id:
             await LessorService._start_simulator_for_iot(iot, session)
 
@@ -550,14 +608,11 @@ class LessorService:
                     detail="Cannot delete IoT device: car must be HIDDEN first"
                 )
 
-        # Останавливаем симулятор перед удалением
         from src.clients.iot_simulator import iot_simulator
         iot_simulator.unregister(iot.id)
 
         await session.delete(iot)
         await session.commit()
-
-    # ─────────────────────── Geofences ──────────────────────────────────────
 
     @staticmethod
     async def get_car_geofences(
@@ -608,7 +663,6 @@ class LessorService:
         session.add(geofence)
         await session.commit()
 
-        # Перезагружаем с joinedload чтобы избежать lazy='raise'
         result = await session.execute(
             select(GeofenceModel)
             .where(GeofenceModel.id == geofence.id)
@@ -734,8 +788,6 @@ class LessorService:
 
         await session.delete(geofence)
         await session.commit()
-
-    # ─────────────────────── Rental Requests ────────────────────────────────
 
     @staticmethod
     async def get_incoming_requests(
@@ -871,8 +923,6 @@ class LessorService:
         await session.commit()
         await session.refresh(request)
         return request
-
-    # ─────────────────────── Rentals ────────────────────────────────────────
 
     @staticmethod
     async def get_rentals(
@@ -1168,14 +1218,11 @@ class LessorService:
             ContractService.generate_and_upload_invoice(str(rental.id))
         )
 
-        # Останавливаем симулятор IoT для машины этой аренды
         asyncio.create_task(
             LessorService._maybe_stop_simulator_for_car(rental.car_id, session)
         )
 
         return rental_with_relations
-
-    # ─────────────────────── Finances ───────────────────────────────────────
 
     @staticmethod
     async def get_finances(
@@ -1183,11 +1230,12 @@ class LessorService:
             user: UserModel,
             session: AsyncSession,
             skip: int = 0,
-            limit: int = 10
+            limit: int = 10,
+            events_skip: int = 0,
     ) -> dict:
         company = await LessorService._verify_company_access(company_id, user, session)
 
-        stmt = (
+        stmt_payments = (
             select(PaymentModel)
             .where(
                 or_(
@@ -1203,12 +1251,23 @@ class LessorService:
             .order_by(PaymentModel.paid_at.desc().nullslast())
             .offset(skip).limit(limit)
         )
-        result = await session.execute(stmt)
-        payments = result.unique().scalars().all()
+        result_payments = await session.execute(stmt_payments)
+        payments = result_payments.unique().scalars().all()
 
-        return {"balance": company.balance, "payments": payments}
+        stmt_events = (
+            select(BalanceEventModel)
+            .where(BalanceEventModel.company_id == company_id)
+            .order_by(BalanceEventModel.created_at.desc())
+            .offset(events_skip).limit(limit)
+        )
+        result_balance_events = await session.execute(stmt_events)
+        balance_events = result_balance_events.unique().scalars().all()
 
-    # ─────────────────────── Employers ──────────────────────────────────────
+        return {
+            "balance": company.balance,
+            "payments": payments,
+            "balance_events": balance_events,
+        }
 
     @staticmethod
     async def get_employers(
@@ -1237,8 +1296,6 @@ class LessorService:
         return await CompanyService.add_owner_to_company(
             company_id, user_email, current_user, CompanyType.LESSOR, session
         )
-
-    # ─────────────────────── Company Profile ────────────────────────────────
 
     @staticmethod
     async def get_company_profile(

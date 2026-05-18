@@ -19,10 +19,7 @@ from src.models.enums import (
 )
 
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
-
 def _safe_get(obj: Any, attr: str) -> Any:
-    """Читает атрибут ORM-объекта, не бросая lazy='raise'."""
     try:
         return getattr(obj, attr)
     except Exception:
@@ -30,15 +27,12 @@ def _safe_get(obj: Any, attr: str) -> Any:
 
 
 def _safe_list(obj: Any, attr: str) -> list:
-    """Читает list-атрибут ORM-объекта, не бросая lazy='raise'."""
     try:
         val = getattr(obj, attr)
         return list(val) if val is not None else []
     except Exception:
         return []
 
-
-# ─── Short schemas (only scalars, no relations) ───────────────────────────────
 
 class CompanyShort(BaseModel):
     model_config = {"from_attributes": True}
@@ -90,7 +84,7 @@ class PaymentShort(BaseModel):
     receiver_company: CompanyShort | None = None
 
     @classmethod
-    def model_validate(cls, obj: Any, **kwargs):  # type: ignore[override]
+    def model_validate(cls, obj: Any, **kwargs):
         if not isinstance(obj, dict):
             data = {
                 "id": obj.id,
@@ -143,7 +137,7 @@ class GeofenceEventShort(BaseModel):
     geofence: GeofenceShort | None = None
 
     @classmethod
-    def model_validate(cls, obj: Any, **kwargs):  # type: ignore[override]
+    def model_validate(cls, obj: Any, **kwargs):
         if not isinstance(obj, dict):
             data = {
                 "id": obj.id,
@@ -166,7 +160,7 @@ class ViolationShort(BaseModel):
     geofence_event: GeofenceEventShort | None = None
 
     @classmethod
-    def model_validate(cls, obj: Any, **kwargs):  # type: ignore[override]
+    def model_validate(cls, obj: Any, **kwargs):
         if not isinstance(obj, dict):
             data = {
                 "id": obj.id,
@@ -179,8 +173,6 @@ class ViolationShort(BaseModel):
         return super().model_validate(obj, **kwargs)
 
 
-# ─── Detailed schemas (used in endpoints that return specific sub-resources) ──
-
 class GeofenceEventDetailShort(BaseModel):
     model_config = {"from_attributes": True}
     id: uuid.UUID
@@ -191,7 +183,7 @@ class GeofenceEventDetailShort(BaseModel):
     geofence: GeofenceShort | None = None
 
     @classmethod
-    def model_validate(cls, obj: Any, **kwargs):  # type: ignore[override]
+    def model_validate(cls, obj: Any, **kwargs):
         if not isinstance(obj, dict):
             data = {
                 "id": obj.id, "type": obj.type,
@@ -212,7 +204,7 @@ class ViolationDetailResponse(BaseModel):
     geofence_event: GeofenceEventDetailShort | None = None
 
     @classmethod
-    def model_validate(cls, obj: Any, **kwargs):  # type: ignore[override]
+    def model_validate(cls, obj: Any, **kwargs):
         if not isinstance(obj, dict):
             data = {
                 "id": obj.id, "type": obj.type,
@@ -243,7 +235,7 @@ class TelemetryDetailResponse(BaseModel):
     user: UserShort | None = None
 
     @classmethod
-    def model_validate(cls, obj: Any, **kwargs):  # type: ignore[override]
+    def model_validate(cls, obj: Any, **kwargs):
         if not isinstance(obj, dict):
             data = {
                 "id": obj.id, "lat": obj.lat, "lng": obj.lng,
@@ -255,8 +247,6 @@ class TelemetryDetailResponse(BaseModel):
             return super().model_validate(data, **kwargs)
         return super().model_validate(obj, **kwargs)
 
-
-# ─── Main RentalResponse ──────────────────────────────────────────────────────
 
 class RentalResponse(BaseModel):
     model_config = {"from_attributes": True}
@@ -285,7 +275,7 @@ class RentalResponse(BaseModel):
     violations: list[ViolationShort] = []
 
     @classmethod
-    def model_validate(cls, obj: Any, **kwargs):  # type: ignore[override]
+    def model_validate(cls, obj: Any, **kwargs):
         if not isinstance(obj, dict):
             data = {
                 "id": obj.id,
@@ -304,10 +294,25 @@ class RentalResponse(BaseModel):
                 "car": _safe_get(obj, "car"),
                 "user": _safe_get(obj, "user"),
                 "payment": _safe_get(obj, "payment"),
-                "rental_documents": _safe_list(obj, "rental_documents"),
-                "telemetries": _safe_list(obj, "telemetries"),
-                "geofence_events": _safe_list(obj, "geofence_events"),
-                "violations": _safe_list(obj, "violations"),
+                "rental_documents": [
+                    RentalDocumentShort.model_validate(x)
+                    for x in _safe_list(obj, "rental_documents")
+                ],
+
+                "telemetries": [
+                    TelemetryShort.model_validate(x)
+                    for x in _safe_list(obj, "telemetries")
+                ],
+
+                "geofence_events": [
+                    GeofenceEventShort.model_validate(x)
+                    for x in _safe_list(obj, "geofence_events")
+                ],
+
+                "violations": [
+                    ViolationShort.model_validate(x)
+                    for x in _safe_list(obj, "violations")
+                ],
             }
             return super().model_validate(data, **kwargs)
         return super().model_validate(obj, **kwargs)

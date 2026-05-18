@@ -8,10 +8,10 @@ from starlette.responses import StreamingResponse
 
 from src.api.schemas.car_schema import CarResponse
 from src.api.schemas.company_schema import (
-    CompanyResponse, CompanyUserResponse, AddOwnerRequest,
+    CompanyResponse,
     RenterDashboardResponse,
 )
-from src.api.schemas.finance_schema import FinanceResponse, PaymentResponse
+from src.api.schemas.finance_schema import FinanceResponse, PaymentResponse, BalanceEventResponse, BalanceAmountRequest
 from src.api.schemas.rental_request_schema import RentalRequestResponse
 from src.api.schemas.rental_schema import (
     RentalResponse, TelemetryDetailResponse, ViolationDetailResponse,
@@ -27,8 +27,6 @@ from src.services.company_service import CompanyService
 
 router = APIRouter(prefix="/renter/{company_id}", tags=["Renter"])
 
-
-# ─────────────────────── Drivers ─────────────────────────────────────────────
 
 @router.get("/drivers", response_model=list[DriverCompanyUserResponse])
 async def get_drivers(
@@ -72,8 +70,6 @@ async def toggle_driver(
     return DriverCompanyUserResponse.model_validate(driver)
 
 
-# ─────────────────────── Car Search ──────────────────────────────────────────
-
 @router.get("/cars", response_model=list[CarResponse])
 async def search_cars(
         company_id: uuid.UUID,
@@ -109,8 +105,6 @@ async def get_car(
         raise HTTPException(status_code=404, detail="Car not found")
     return CarResponse.model_validate(car)
 
-
-# ─────────────────────── Rental Requests ─────────────────────────────────────
 
 @router.get("/requests", response_model=list[RentalRequestResponse])
 async def get_requests(
@@ -167,8 +161,6 @@ async def cancel_request(
     request = await RenterService.cancel_request(company_id, request_id, user, session)
     return RentalRequestResponse.model_validate(request)
 
-
-# ─────────────────────── Rentals ─────────────────────────────────────────────
 
 @router.get("/rentals", response_model=list[RentalResponse])
 async def get_rentals(
@@ -290,24 +282,58 @@ async def download_document(
     )
 
 
-# ─────────────────────── Finances ─────────────────────────────────────────────
-
 @router.get("/finances", response_model=FinanceResponse)
 async def get_finances(
         company_id: uuid.UUID,
         skip: int = Query(0, ge=0),
         limit: int = Query(10, ge=1, le=100),
+        events_skip: int = Query(0, ge=0),
         user: UserModel = Depends(get_current_user),
         session: AsyncSession = Depends(db.get_session),
 ) -> FinanceResponse:
-    data = await RenterService.get_finances(company_id, user, session, skip, limit)
+    data = await RenterService.get_finances(company_id, user, session, skip, limit, events_skip)
     return FinanceResponse(
         balance=data["balance"],
-        payments=[PaymentResponse.model_validate(p) for p in data["payments"]]
+        payments=[PaymentResponse.model_validate(p) for p in data["payments"]],
+        balance_events=[BalanceEventResponse.model_validate(e) for e in data["balance_events"]],
     )
 
+@router.post("/finances/top-up")
+async def top_up_balance(
+    company_id: uuid.UUID,
+    data: BalanceAmountRequest,
+    user: UserModel = Depends(get_current_user),
+    session: AsyncSession = Depends(db.get_session),
+):
+    company = await RenterService.top_up_company_balance(
+        company_id=company_id,
+        user=user,
+        session=session,
+        amount=data.amount,
+    )
+    return {
+        "company_id": company.id,
+        "balance": company.balance,
+    }
 
-# ─────────────────────── Company Profile ─────────────────────────────────────
+
+@router.post("/finances/withdraw")
+async def withdraw_balance(
+    company_id: uuid.UUID,
+    data: BalanceAmountRequest,
+    user: UserModel = Depends(get_current_user),
+    session: AsyncSession = Depends(db.get_session),
+):
+    company = await RenterService.withdraw_company_balance(
+        company_id=company_id,
+        user=user,
+        session=session,
+        amount=data.amount,
+    )
+    return {
+        "company_id": company.id,
+        "balance": company.balance,
+    }
 
 @router.get("/profile", response_model=CompanyResponse)
 async def get_company_profile(

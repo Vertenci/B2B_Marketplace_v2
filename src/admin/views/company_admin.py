@@ -64,8 +64,6 @@ class CompanyAdmin(BaseAdmin, model=CompanyModel):
 
     column_default_sort = [(CompanyModel.created_at, True)]
 
-    # При редактировании type НЕ включаем в форму — чтобы не перезаписывалось
-    # Баланс, is_verified, name, inn — можно менять
     form_columns = [
         "name",
         "inn",
@@ -89,17 +87,10 @@ class CompanyAdmin(BaseAdmin, model=CompanyModel):
     }
 
     async def on_model_change(self, data: dict, model: CompanyModel, is_created: bool, request: Request):
-        """
-        Гарантируем что type не меняется при редактировании.
-        При создании — type из формы (если передан), иначе lessor по умолчанию.
-        """
         if not is_created:
-            # При редактировании — восстанавливаем оригинальный type из модели
-            # (data может не содержать type, но на всякий случай принудительно ставим)
             if "type" in data:
                 data["type"] = model.type
         else:
-            # При создании — если type не указан, ставим lessor
             if not data.get("type"):
                 data["type"] = CompanyType.LESSOR
 

@@ -1,5 +1,4 @@
 import uuid
-from typing import Sequence, Any
 
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +9,6 @@ from src.models import (
     UserModel,
     CompanyUserModel,
     CompanyModel,
-    RentalModel,
 )
 from src.models.enums import CompanyType
 

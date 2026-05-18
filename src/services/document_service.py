@@ -1,7 +1,6 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import Request
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,7 +33,6 @@ class DocumentService:
             ip_address: str | None = None,
             user_agent: str | None = None
     ) -> AgreementModel:
-        """Принять публичную оферту и обновить флаг в профиле пользователя."""
         stmt = select(AgreementModel).where(
             AgreementModel.user_id == user.id,
             AgreementModel.type == AgreementType.PUBLIC_OFFER
@@ -59,7 +57,6 @@ class DocumentService:
             )
             session.add(agreement)
 
-        # Обновляем флаг в модели пользователя
         user.public_offer_accepted = True
 
         await session.commit()

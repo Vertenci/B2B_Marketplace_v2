@@ -52,4 +52,4 @@ class GeofenceModel(Base, IdMixin, CreatedAtMixin):
 
     car: Mapped["CarModel"] = relationship("CarModel", back_populates="geofences", lazy="raise", uselist=False)
 
-    geofence_events: Mapped[list["GeofenceEventModel"] | None] = relationship("GeofenceEventModel", back_populates="geofence", lazy="raise", uselist=True)
+    geofence_events: Mapped[list["GeofenceEventModel"]] = relationship("GeofenceEventModel", back_populates="geofence", lazy="raise", uselist=True)

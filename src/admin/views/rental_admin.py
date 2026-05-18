@@ -137,7 +137,7 @@ class RentalAdmin(BaseAdmin, model=RentalModel):
             return "—"
 
         return Markup(
-            f'<span style="font-weight: 600; color: #2E7D32;">P{price:,.2f}</span>'
+            f'<span style="font-weight: 600; color: #2E7D32;">₽{price:,.2f}</span>'
         )
 
     @staticmethod
@@ -149,11 +149,11 @@ class RentalAdmin(BaseAdmin, model=RentalModel):
 
         if fee > 0:
             return Markup(
-                f'<span style="color: #F44336; font-weight: 500;">+P{fee:,.2f}</span>'
+                f'<span style="color: #F44336; font-weight: 500;">+₽{fee:,.2f}</span>'
             )
         else:
             return Markup(
-                f'<span style="color: #757575;">P{fee:,.2f}</span>'
+                f'<span style="color: #757575;">₽{fee:,.2f}</span>'
             )
 
     @staticmethod
@@ -163,7 +163,7 @@ class RentalAdmin(BaseAdmin, model=RentalModel):
         total = base + extra
 
         return Markup(
-            f'<span style="font-weight: 700; color: #1565C0;">P{total:,.2f}</span>'
+            f'<span style="font-weight: 700; color: #1565C0;">₽{total:,.2f}</span>'
         )
 
     @staticmethod
@@ -247,7 +247,7 @@ class RentalAdmin(BaseAdmin, model=RentalModel):
             f'<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">'
             f'<div>'
             f'<div style="font-size: 14px; opacity: 0.9; margin-bottom: 5px;">Total Amount</div>'
-            f'<div style="font-size: 36px; font-weight: 700;">${total:,.2f}</div>'
+            f'<div style="font-size: 36px; font-weight: 700;">₽{total:,.2f}</div>'
             f'</div>'
             f'<div style="text-align: right;">'
             f'<div style="display: inline-block; padding: 6px 16px; '
@@ -261,11 +261,11 @@ class RentalAdmin(BaseAdmin, model=RentalModel):
             f'background: rgba(255,255,255,0.1); border-radius: 8px; padding: 15px;">'
             f'<div>'
             f'<div style="font-size: 12px; opacity: 0.8;">Base Price</div>'
-            f'<div style="font-size: 18px; font-weight: 600;">${base_price:,.2f}</div>'
+            f'<div style="font-size: 18px; font-weight: 600;">₽{base_price:,.2f}</div>'
             f'</div>'
             f'<div>'
             f'<div style="font-size: 12px; opacity: 0.8;">Extra Fees</div>'
-            f'<div style="font-size: 18px; font-weight: 600;">${extra_fee:,.2f}</div>'
+            f'<div style="font-size: 18px; font-weight: 600;">₽{extra_fee:,.2f}</div>'
             f'</div>'
             f'<div>'
             f'<div style="font-size: 12px; opacity: 0.8;">Payment Status</div>'

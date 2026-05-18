@@ -1,14 +1,10 @@
-"""
-Сервис для всех операций Renter компании.
-"""
-import io
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Sequence, Any
 
 from fastapi import HTTPException
-from sqlalchemy import select, or_
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -24,7 +20,7 @@ from src.models import (
     GeofenceEventModel,
     ViolationModel,
     TelemetryModel,
-    RentalDocumentsModel,
+    RentalDocumentsModel, BalanceEventModel,
 )
 from src.models.enums import (
     CompanyType,
@@ -34,12 +30,11 @@ from src.models.enums import (
     RentalRequestStatus,
     PaymentStatus,
     PaymentType,
-    RentalDocumentType,
+    RentalDocumentType, BalanceEventType,
 )
 
 
 class RenterService:
-
     @staticmethod
     async def _verify_company_access(
             company_id: uuid.UUID,
@@ -83,8 +78,6 @@ class RenterService:
         )
         result = await session.execute(stmt)
         return result.unique().scalar_one_or_none()
-
-    # ─────────────────────── Drivers ────────────────────────────────────────
 
     @staticmethod
     async def get_drivers(
@@ -196,8 +189,6 @@ class RenterService:
         await session.refresh(cu)
         return cu
 
-    # ─────────────────────── Car Search ─────────────────────────────────────
-
     @staticmethod
     async def search_cars(
             company_id: uuid.UUID,
@@ -262,8 +253,6 @@ class RenterService:
         result = await session.execute(stmt)
         return result.unique().scalar_one_or_none()
 
-    # ─────────────────────── Rental Requests ────────────────────────────────
-
     @staticmethod
     async def get_requests(
             company_id: uuid.UUID,
@@ -301,7 +290,6 @@ class RenterService:
     ) -> RentalRequestModel:
         await RenterService._verify_company_access(company_id, user, session)
 
-        # Проверяем что машина доступна
         result = await session.execute(
             select(CarModel).where(CarModel.id == car_id)
         )
@@ -311,7 +299,6 @@ class RenterService:
         if car.status != CarStatus.AVAILABLE:
             raise HTTPException(status_code=400, detail=f"Car is not available. Status: {car.status.value}")
 
-        # Проверяем что водитель принадлежит renter компании
         result = await session.execute(
             select(CompanyUserModel).where(
                 CompanyUserModel.user_id == driver_id,
@@ -336,7 +323,6 @@ class RenterService:
         await session.commit()
         await session.refresh(request)
 
-        # Перезагрузить с relations
         stmt = (
             select(RentalRequestModel)
             .where(RentalRequestModel.id == request.id)
@@ -404,8 +390,6 @@ class RenterService:
         await session.commit()
         await session.refresh(request)
         return request
-
-    # ─────────────────────── Rentals ────────────────────────────────────────
 
     @staticmethod
     async def get_rentals(
@@ -589,7 +573,7 @@ class RenterService:
             raise HTTPException(status_code=404, detail="Completed unpaid rental not found")
 
         total_amount = rental.base_price_total + rental.extra_days_fee
-        commission_rate = Decimal("0.05")  # 5% комиссия платформы
+        commission_rate = Decimal("0.15")
         commission_amount = total_amount * commission_rate
 
         if company.balance < total_amount:
@@ -608,7 +592,6 @@ class RenterService:
         )
         session.add(payment)
 
-        # Обновляем балансы
         company.balance -= total_amount
         rental.lessor_company.balance += (total_amount - commission_amount)
         rental.is_paid = True
@@ -687,7 +670,6 @@ class RenterService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error downloading file: {e}")
 
-    # ─────────────────────── Finances ───────────────────────────────────────
 
     @staticmethod
     async def get_finances(
@@ -695,11 +677,12 @@ class RenterService:
             user: UserModel,
             session: AsyncSession,
             skip: int = 0,
-            limit: int = 10
+            limit: int = 10,
+            events_skip: int = 0,
     ) -> dict:
         company = await RenterService._verify_company_access(company_id, user, session)
 
-        stmt = (
+        stmt_payments = (
             select(PaymentModel)
             .where(PaymentModel.payer_company_id == company_id)
             .options(
@@ -710,7 +693,96 @@ class RenterService:
             .order_by(PaymentModel.paid_at.desc().nullslast())
             .offset(skip).limit(limit)
         )
-        result = await session.execute(stmt)
-        payments = result.unique().scalars().all()
+        result_payments = await session.execute(stmt_payments)
+        payments = result_payments.unique().scalars().all()
 
-        return {"balance": company.balance, "payments": payments}
+        stmt_events = (
+            select(BalanceEventModel)
+            .where(BalanceEventModel.company_id == company_id)
+            .order_by(BalanceEventModel.created_at.desc())
+            .offset(events_skip).limit(limit)
+        )
+        result_balance_events = await session.execute(stmt_events)
+        balance_events = result_balance_events.unique().scalars().all()
+
+        return {
+            "balance": company.balance,
+            "payments": payments,
+            "balance_events": balance_events,
+        }
+
+    @staticmethod
+    async def top_up_company_balance(
+            company_id: uuid.UUID,
+            user: UserModel,
+            session: AsyncSession,
+            amount: Decimal,
+    ) -> CompanyModel:
+        if amount <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Amount must be greater than zero",
+            )
+
+        company = await RenterService._verify_company_access(company_id, user, session)
+
+        balance_before = company.balance
+        company.balance += amount
+        balance_after = company.balance
+
+        balance_event = BalanceEventModel(
+            company_id=company.id,
+            event_type=BalanceEventType.TOP_UP,
+            balance_before=balance_before,
+            balance_after=balance_after,
+            operation_amount=amount,
+        )
+
+        session.add(company)
+        session.add(balance_event)
+
+        await session.commit()
+        await session.refresh(company)
+
+        return company
+
+    @staticmethod
+    async def withdraw_company_balance(
+            company_id: uuid.UUID,
+            user: UserModel,
+            session: AsyncSession,
+            amount: Decimal,
+    ) -> CompanyModel:
+        if amount <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Amount must be greater than zero",
+            )
+
+        company = await RenterService._verify_company_access(company_id, user, session)
+
+        if company.balance < amount:
+            raise HTTPException(
+                status_code=400,
+                detail="Insufficient balance",
+            )
+
+        balance_before = company.balance
+        company.balance -= amount
+        balance_after = company.balance
+
+        balance_event = BalanceEventModel(
+            company_id=company.id,
+            event_type=BalanceEventType.WITHDRAW,
+            balance_before=balance_before,
+            balance_after=balance_after,
+            operation_amount=amount,
+        )
+
+        session.add(company)
+        session.add(balance_event)
+
+        await session.commit()
+        await session.refresh(company)
+
+        return company

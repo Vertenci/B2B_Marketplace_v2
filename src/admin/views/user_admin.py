@@ -59,7 +59,7 @@ class UserAdmin(BaseAdmin, model=UserModel):
         UserModel.email,
         UserModel.role,
         UserModel.created_at,
-        UserModel.is_active,
+        UserModel.full_name,
     ]
 
     form_excluded_columns = ["password_hash"]
@@ -95,8 +95,40 @@ class UserAdmin(BaseAdmin, model=UserModel):
             f'<span title="{value}">{short}</span>'
         )
 
+    @staticmethod
+    def _format_id(model, attribute):
+        value = str(model.id) if model.id is not None else ""
+
+        max_length = 20
+
+        if len(value) <= max_length:
+            return value
+
+        short = value[:max_length] + "..."
+
+        return Markup(
+            f'<span title="{value}">{short}</span>'
+        )
+
+    @staticmethod
+    def _format_full_name(model, attribute):
+        value = model.full_name or ""
+
+        max_length = 20
+
+        if len(value) <= max_length:
+            return value
+
+        short = value[:max_length] + "..."
+
+        return Markup(
+            f'<span title="{value}">{short}</span>'
+        )
+
     column_formatters = {
         UserModel.email: _format_email,
+        UserModel.id: _format_id,
+        UserModel.full_name: _format_full_name,
     }
 
     async def scaffold_form(self, rules=None):
@@ -121,6 +153,8 @@ class UserAdmin(BaseAdmin, model=UserModel):
     ):
         if is_created:
             model.role = UserRole.USER
+        else:
+            data.pop("role", None)
 
         password = data.pop("password", None)
         data.pop("password_hash", None)

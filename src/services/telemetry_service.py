@@ -1,9 +1,4 @@
-"""
-Сервис телеметрии — приём данных от IoT устройств.
-IoT отправляет данные -> сохраняем телеметрию -> проверяем геозоны -> создаём нарушения.
-"""
 import math
-import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -14,7 +9,6 @@ from sqlalchemy.orm import joinedload
 from src.models import (
     TelemetryModel,
     RentalModel,
-    CarModel,
     IotDeviceModel,
     GeofenceModel,
     GeofenceEventModel,
@@ -27,12 +21,10 @@ from src.models.enums import (
     SeverityType,
 )
 
-# Ограничение скорости по умолчанию (км/ч) для фиксации нарушения
 SPEED_LIMIT_KMH = 120
 
 
 def _haversine_distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Расстояние в метрах между двумя точками (формула Haversine)."""
     R = 6371000  # Радиус Земли в метрах
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
@@ -42,7 +34,6 @@ def _haversine_distance_meters(lat1: float, lon1: float, lat2: float, lon2: floa
 
 
 class TelemetryService:
-
     @staticmethod
     async def process_telemetry(
             device_identifier: str,
@@ -53,12 +44,6 @@ class TelemetryService:
             recorded_at: datetime | None = None,
             battery_level: int | None = None,
     ) -> TelemetryModel:
-        """
-        Принять телеметрию от IoT устройства.
-        Находит активную аренду по device_identifier, сохраняет телеметрию,
-        проверяет геозоны и скоростной режим.
-        """
-        # Найти IoT устройство
         result = await session.execute(
             select(IotDeviceModel)
             .where(IotDeviceModel.device_identifier == device_identifier)
@@ -75,7 +60,6 @@ class TelemetryService:
 
         car_id = iot.car_id
 
-        # Найти активную аренду для этой машины
         result = await session.execute(
             select(RentalModel)
             .where(
@@ -88,12 +72,10 @@ class TelemetryService:
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="No active rental for this car")
 
-        # Обновляем статус устройства
         iot.is_online = True
         if battery_level is not None:
             iot.battery_level = max(0, min(100, battery_level))
 
-        # Сохраняем телеметрию
         now = recorded_at or datetime.now(timezone.utc)
         telemetry = TelemetryModel(
             rental_id=rental.id,
@@ -106,7 +88,6 @@ class TelemetryService:
         )
         session.add(telemetry)
 
-        # Проверяем нарушение скоростного режима
         if speed > SPEED_LIMIT_KMH:
             violation = ViolationModel(
                 rental_id=rental.id,
@@ -116,7 +97,6 @@ class TelemetryService:
             )
             session.add(violation)
 
-        # Проверяем геозоны активных на этой машине
         result = await session.execute(
             select(GeofenceModel).where(
                 GeofenceModel.car_id == car_id,
@@ -133,7 +113,6 @@ class TelemetryService:
             )
             is_inside = distance <= float(geofence.radius_meters)
 
-            # Получим последнее событие для данной геозоны и аренды
             last_event_result = await session.execute(
                 select(GeofenceEventModel)
                 .where(
@@ -163,9 +142,8 @@ class TelemetryService:
                     triggered_at=now,
                 )
                 session.add(geo_event)
-                await session.flush()  # Получить id геозонного события
+                await session.flush()
 
-                # При выходе создаём нарушение
                 if event_type == GeofenceType.EXIT:
                     violation = ViolationModel(
                         rental_id=rental.id,

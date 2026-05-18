@@ -1,7 +1,3 @@
-"""
-Сервис для операций Водителя.
-Водитель видит только аренды где он указан как driver_id.
-"""
 import uuid
 from typing import Sequence, Any
 
@@ -19,7 +15,6 @@ from src.models import (
     TelemetryModel,
     GeofenceEventModel,
     ViolationModel,
-    PaymentModel,
 )
 from src.models.enums import CompanyRole, RentalStatus
 
@@ -31,7 +26,6 @@ class DriverService:
             user: UserModel,
             session: AsyncSession
     ) -> CompanyModel | None:
-        """Получить компанию, в которой пользователь является водителем."""
         stmt = (
             select(CompanyModel)
             .join(CompanyUserModel, CompanyModel.id == CompanyUserModel.company_id)

@@ -11,6 +11,7 @@ from src.models.mixin import IdMixin, CreatedAtMixin
 
 if TYPE_CHECKING:
     from src.models.company_users_model import CompanyUserModel
+    from src.models.balance_event_model import BalanceEventModel
     from src.models.car_model import CarModel
     from src.models.rental_request_model import RentalRequestModel
     from src.models.rental_model import RentalModel
@@ -59,14 +60,16 @@ class CompanyModel(Base, IdMixin, CreatedAtMixin):
 
     company_users: Mapped[list["CompanyUserModel"]] = relationship("CompanyUserModel", back_populates="company", lazy="raise", uselist=True)
 
-    cars: Mapped[list["CarModel"] | None] = relationship("CarModel", back_populates="company", lazy="raise", uselist=True)
+    cars: Mapped[list["CarModel"]] = relationship("CarModel", back_populates="company", lazy="raise", uselist=True)
 
-    rental_requests: Mapped[list["RentalRequestModel"] | None] = relationship("RentalRequestModel", back_populates="company", lazy="raise", uselist=True)
+    rental_requests: Mapped[list["RentalRequestModel"]] = relationship("RentalRequestModel", back_populates="company", lazy="raise", uselist=True)
 
-    lessor_rentals: Mapped[list["RentalModel"] | None] = relationship("RentalModel", foreign_keys="RentalModel.lessor_company_id", back_populates="lessor_company", lazy="raise", uselist=True)
+    lessor_rentals: Mapped[list["RentalModel"]] = relationship("RentalModel", foreign_keys="RentalModel.lessor_company_id", back_populates="lessor_company", lazy="raise", uselist=True)
 
-    renter_rentals: Mapped[list["RentalModel"] | None] = relationship("RentalModel", foreign_keys="RentalModel.renter_company_id", back_populates="renter_company", lazy="raise", uselist=True)
+    renter_rentals: Mapped[list["RentalModel"]] = relationship("RentalModel", foreign_keys="RentalModel.renter_company_id", back_populates="renter_company", lazy="raise", uselist=True)
 
-    payer_companies: Mapped[list["PaymentModel"] | None] = relationship("PaymentModel", foreign_keys="PaymentModel.payer_company_id", back_populates="payer_company", lazy="raise", uselist=True)
+    payer_companies: Mapped[list["PaymentModel"]] = relationship("PaymentModel", foreign_keys="PaymentModel.payer_company_id", back_populates="payer_company", lazy="raise", uselist=True)
 
-    receiver_companies: Mapped[list["PaymentModel"] | None] = relationship("PaymentModel", foreign_keys="PaymentModel.receiver_company_id", back_populates="receiver_company", lazy="raise", uselist=True)
+    receiver_companies: Mapped[list["PaymentModel"]] = relationship("PaymentModel", foreign_keys="PaymentModel.receiver_company_id", back_populates="receiver_company", lazy="raise", uselist=True)
+
+    balance_events: Mapped[list["BalanceEventModel"]] = relationship("BalanceEventModel", back_populates="company", lazy="raise", uselist=True)

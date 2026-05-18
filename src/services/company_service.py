@@ -1,11 +1,9 @@
 import uuid
-from decimal import Decimal
 from typing import Sequence
 
 from fastapi import HTTPException
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
 
 from src.models import (
     UserModel,
@@ -24,7 +22,6 @@ from src.models.enums import (
 
 
 class CompanyService:
-
     @staticmethod
     async def create_company(
             user: UserModel,
@@ -33,7 +30,6 @@ class CompanyService:
             inn: str,
             session: AsyncSession
     ) -> CompanyModel:
-        # Проверим уникальность имени
         result = await session.execute(
             select(CompanyModel).where(CompanyModel.name == name)
         )
@@ -50,7 +46,6 @@ class CompanyService:
         session.add(company)
         await session.flush()
 
-        # Добавляем создателя как владельца
         company_user = CompanyUserModel(
             user_id=user.id,
             company_id=company.id,
@@ -111,7 +106,6 @@ class CompanyService:
             company_type: CompanyType,
             session: AsyncSession
     ) -> CompanyModel:
-        """Получить компанию и убедиться что пользователь к ней принадлежит."""
         stmt = (
             select(CompanyModel)
             .join(CompanyUserModel, CompanyModel.id == CompanyUserModel.company_id)
@@ -139,13 +133,11 @@ class CompanyService:
         )
 
         from src.models import CarModel
-        # Кол-во машин
         total_cars_res = await session.execute(
             select(func.count()).select_from(CarModel).where(CarModel.owner_company_id == company_id)
         )
         total_cars = total_cars_res.scalar() or 0
 
-        # Аренды
         total_rentals_res = await session.execute(
             select(func.count()).select_from(RentalModel).where(RentalModel.lessor_company_id == company_id)
         )
@@ -159,7 +151,6 @@ class CompanyService:
         )
         active_rentals = active_rentals_res.scalar() or 0
 
-        # Заявки
         total_req_res = await session.execute(
             select(func.count()).select_from(RentalRequestModel)
             .join(CarModel, RentalRequestModel.car_id == CarModel.id)
@@ -196,7 +187,6 @@ class CompanyService:
             company_id, user, CompanyType.RENTER, session
         )
 
-        # Кол-во водителей
         drivers_res = await session.execute(
             select(func.count()).select_from(CompanyUserModel).where(
                 CompanyUserModel.company_id == company_id,
@@ -253,7 +243,6 @@ class CompanyService:
             company_id, user, CompanyType.LESSOR, session
         )
 
-        # Проверяем: нет активных аренд
         active_rentals_res = await session.execute(
             select(func.count()).select_from(RentalModel).where(
                 RentalModel.lessor_company_id == company_id,
@@ -263,7 +252,6 @@ class CompanyService:
         if (active_rentals_res.scalar() or 0) > 0:
             raise HTTPException(status_code=400, detail="Cannot delete company with active rentals")
 
-        # Нет активных заявок
         from src.models import CarModel
         pending_req_res2 = await session.execute(
             select(func.count()).select_from(RentalRequestModel)
@@ -276,7 +264,6 @@ class CompanyService:
         if (pending_req_res2.scalar() or 0) > 0:
             raise HTTPException(status_code=400, detail="Cannot delete company with pending requests")
 
-        # Все машины должны быть HIDDEN
         from src.models import CarModel
         non_hidden_res = await session.execute(
             select(func.count()).select_from(CarModel).where(
@@ -300,7 +287,6 @@ class CompanyService:
             company_id, user, CompanyType.RENTER, session
         )
 
-        # Нет активных аренд
         active_rentals_res = await session.execute(
             select(func.count()).select_from(RentalModel).where(
                 RentalModel.renter_company_id == company_id,
@@ -310,7 +296,6 @@ class CompanyService:
         if (active_rentals_res.scalar() or 0) > 0:
             raise HTTPException(status_code=400, detail="Cannot delete company with active rentals")
 
-        # Нет неоплаченных завершённых аренд
         unpaid_res = await session.execute(
             select(func.count()).select_from(RentalModel).where(
                 RentalModel.renter_company_id == company_id,
@@ -321,7 +306,6 @@ class CompanyService:
         if (unpaid_res.scalar() or 0) > 0:
             raise HTTPException(status_code=400, detail="Cannot delete company with unpaid rentals")
 
-        # Нет активных заявок
         pending_req_res = await session.execute(
             select(func.count()).select_from(RentalRequestModel).where(
                 RentalRequestModel.renter_company_id == company_id,
@@ -342,12 +326,10 @@ class CompanyService:
             company_type: CompanyType,
             session: AsyncSession
     ) -> CompanyUserModel:
-        """Добавить ещё одного владельца к компании."""
         await CompanyService.get_company_for_user(
             company_id, current_user, company_type, session
         )
 
-        # Находим пользователя по email
         result = await session.execute(
             select(UserModel).where(UserModel.email == user_email.strip().lower())
         )
@@ -355,7 +337,6 @@ class CompanyService:
         if not target_user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        # Проверяем, не добавлен ли уже
         result = await session.execute(
             select(CompanyUserModel).where(
                 CompanyUserModel.user_id == target_user.id,
@@ -366,7 +347,6 @@ class CompanyService:
         if existing:
             if existing.is_active:
                 raise HTTPException(status_code=400, detail="User is already in this company")
-            # Реактивируем
             existing.is_active = True
             existing.position = CompanyRole.OWNER
             await session.commit()
@@ -386,7 +366,6 @@ class CompanyService:
 
     @staticmethod
     async def get_main_dashboard(session: AsyncSession) -> dict:
-        """Публичная статистика для главной страницы."""
         total_companies_res = await session.execute(
             select(func.count()).select_from(CompanyModel)
         )

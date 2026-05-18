@@ -4,6 +4,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from src.admin.auth import AdminAuth
 from src.admin.views.agreement_admin import AgreementAdmin
+from src.admin.views.balance_event_admin import BalanceEventAdmin
 from src.admin.views.car_admin import CarAdmin
 from src.admin.views.company_admin import CompanyAdmin
 from src.admin.views.company_user_admin import CompanyUserAdmin
@@ -35,7 +36,7 @@ def setup_admin(app: FastAPI, db: Database):
 
     # Accounts
     admin.add_view(UserAdmin)
-    admin.add_view(DriverLicenseAdmin)
+    # admin.add_view(DriverLicenseAdmin)
 
     # Companies
     admin.add_view(CompanyAdmin)
@@ -56,6 +57,7 @@ def setup_admin(app: FastAPI, db: Database):
 
     # Finance
     admin.add_view(PaymentAdmin)
+    admin.add_view(BalanceEventAdmin)
 
     # Security
     admin.add_view(RefreshTokenAdmin)

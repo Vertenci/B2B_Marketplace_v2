@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import BinaryIO
 
@@ -45,16 +46,22 @@ class MinioClient:
             metadata: dict = None
     ) -> str:
         try:
-            file_size = file_data.seek(0, 2)
+            file_data.seek(0, 2)
+            file_size = file_data.tell()
             file_data.seek(0)
 
-            self.client.put_object(
-                bucket_name=self.bucket_name,
-                object_name=object_name,
-                data=file_data,
-                length=file_size,
-                content_type=content_type,
-                metadata=metadata or {}
+            loop = asyncio.get_running_loop()
+
+            await loop.run_in_executor(
+                None,
+                lambda: self.client.put_object(
+                    bucket_name=self.bucket_name,
+                    object_name=object_name,
+                    data=file_data,
+                    length=file_size,
+                    content_type=content_type,
+                    metadata=metadata or {}
+                )
             )
 
             logger.info(f"File '{object_name}' uploaded successfully")

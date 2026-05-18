@@ -81,15 +81,15 @@ class UserModel(Base, IdMixin, CreatedAtMixin):
     def __str__(self):
         return self.email
 
-    company_users: Mapped[list["CompanyUserModel"] | None] = relationship("CompanyUserModel", back_populates="user", lazy="raise", uselist=True)
+    company_users: Mapped[list["CompanyUserModel"]] = relationship("CompanyUserModel", back_populates="user", lazy="raise", uselist=True)
 
-    agreements: Mapped[list["AgreementModel"] | None] = relationship("AgreementModel", back_populates="user", lazy="raise", uselist=True)
+    agreements: Mapped[list["AgreementModel"]] = relationship("AgreementModel", back_populates="user", lazy="raise", uselist=True)
 
-    rental_requests: Mapped[list["RentalRequestModel"] | None] = relationship("RentalRequestModel", back_populates="user", lazy="raise", uselist=True)
+    rental_requests: Mapped[list["RentalRequestModel"]] = relationship("RentalRequestModel", back_populates="user", lazy="raise", uselist=True)
 
-    rentals: Mapped[list["RentalModel"] | None] = relationship("RentalModel", back_populates="user", lazy="raise", uselist=True)
+    rentals: Mapped[list["RentalModel"]] = relationship("RentalModel", back_populates="user", lazy="raise", uselist=True)
 
-    telemetries: Mapped[list["TelemetryModel"] | None] = relationship("TelemetryModel", back_populates="user", lazy="raise",  uselist=True)
+    telemetries: Mapped[list["TelemetryModel"]] = relationship("TelemetryModel", back_populates="user", lazy="raise",  uselist=True)
 
     driver_license: Mapped["DriverLicenseModel | None"] = relationship("DriverLicenseModel", back_populates="user", lazy="raise", uselist=False)
 

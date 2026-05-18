@@ -1,9 +1,9 @@
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException
 
-from src.models import UserModel, CompanyModel, CompanyUserModel, RentalModel
-from src.models.enums import CompanyType, RentalStatus
+from src.models import UserModel, CompanyModel, CompanyUserModel
+from src.models.enums import CompanyType
 
 
 class ProfileService:
@@ -20,7 +20,6 @@ class ProfileService:
             session: AsyncSession
     ) -> UserModel:
         if phone is not None:
-            # Проверим уникальность телефона
             result = await session.execute(
                 select(UserModel).where(
                     UserModel.phone == phone,
@@ -43,7 +42,6 @@ class ProfileService:
             user: UserModel,
             session: AsyncSession
     ) -> None:
-        """Удалить аккаунт если нет компаний."""
         result = await session.execute(
             select(CompanyUserModel).where(
                 CompanyUserModel.user_id == user.id,
@@ -63,7 +61,6 @@ class ProfileService:
 
     @staticmethod
     async def get_my_dashboard(user: UserModel, session: AsyncSession) -> dict:
-        """Статистика по компаниям пользователя."""
         stmt = (
             select(CompanyModel, CompanyUserModel.position)
             .join(CompanyUserModel, CompanyModel.id == CompanyUserModel.company_id)
